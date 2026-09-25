@@ -1,0 +1,183 @@
+"""
+utils/ratelimit.py — Abuse protection for the OTP endpoints.
+
+Why this exists
+---------------
+`signup`, `signin` and `resend-otp` all send an SMS. Without limits, anyone can
+call them in a loop: you pay for every message, and somebody's phone buzzes all
+night. These limits are the difference between a demo and something you can
+point a real app at.
+
+How it works
+------------
+Fixed-window counters in MongoDB, one document per (scope, identifier, window).
+Mongo rather than in-process memory because the counters must be shared across
+every worker process and survive restarts — an in-memory limiter silently stops
+working the moment you run more than one uvicorn worker. Mongo rather than Redis
+because it needs no extra service; move to Redis if request volume ever makes
+the extra round-trip matter.
+
+Every counter carries a TTL, so the collection cleans itself up.
+
+Design notes
+------------
+* A blocked attempt still counts against the window. Hammering the endpoint
+  therefore extends your own lockout rather than probing around it.
+* Limits are consumed *before* the work is attempted, so a request that fails
+  for another reason (unknown number, existing account) still costs quota. That
+  is deliberate: it is what makes number enumeration expensive.
+* Every rejection carries Retry-After, so the app can render "Resend in 47s"
+  instead of letting the user mash a button.
+"""
+
+import logging
+import math
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+
+from fastapi import Request, status
+from pymongo import ReturnDocument
+
+from app.config import settings
+from app.database import rate_limits_collection
+from app.errors import APIError, ErrorCode
+
+logger = logging.getLogger("nutriblend.ratelimit")
+
+
+@dataclass(frozen=True)
+class Rule:
+    """One limit: `limit` events per `window_seconds` for a given key."""
+    scope: str
+    identifier: str
+    limit: int
+    window_seconds: int
+    #: Shown to the user when this particular rule trips.
+    message: str = "Too many requests. Please try again later."
+
+
+class RateLimitExceeded(APIError):
+    def __init__(self, retry_after: int, message: str, scope: str):
+        super().__init__(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            code=ErrorCode.RATE_LIMITED,
+            message=message,
+            details={"retry_after_seconds": retry_after},
+            headers={"Retry-After": str(retry_after)},
+        )
+        self.retry_after = retry_after
+        self.scope = scope
+
+
+def client_ip(request: Request) -> str:
+    """
+    The caller's IP.
+
+    Behind a proxy the socket address is the proxy's, so the real client is in
+    X-Forwarded-For. That header is trivially forged, so we only read it when
+    TRUST_PROXY_HEADERS is on — which should be true only when the app really
+    does sit behind a proxy you control. Getting this backwards either throttles
+    every user as one IP, or lets anyone bypass per-IP limits by sending a header.
+    """
+    if settings.TRUST_PROXY_HEADERS:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            # Left-most entry is the original client.
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+async def _consume(rule: Rule, now: datetime) -> None:
+    """Increment one counter and raise if it has gone over the limit."""
+    window_start_epoch = math.floor(now.timestamp() / rule.window_seconds) * rule.window_seconds
+    window_end = datetime.fromtimestamp(window_start_epoch + rule.window_seconds, tz=timezone.utc)
+    doc_id = f"{rule.scope}:{rule.identifier}:{window_start_epoch}"
+
+    doc = await rate_limits_collection.find_one_and_update(
+        {"_id": doc_id},
+        {
+            "$inc": {"count": 1},
+            "$setOnInsert": {
+                "scope": rule.scope,
+                "identifier": rule.identifier,
+                "expires_at": window_end,
+            },
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+
+    if doc["count"] > rule.limit:
+        retry_after = max(1, int((window_end - now).total_seconds()))
+        logger.warning(
+            "Rate limit hit: scope=%s identifier=%s count=%d limit=%d",
+            rule.scope, rule.identifier, doc["count"], rule.limit,
+        )
+        raise RateLimitExceeded(retry_after, rule.message, rule.scope)
+
+
+async def enforce(*rules: Rule) -> None:
+    """Apply every rule. Raises RateLimitExceeded on the first one that trips."""
+    if not settings.RATE_LIMIT_ENABLED:
+        return
+    now = datetime.now(timezone.utc)
+    for rule in rules:
+        await _consume(rule, now)
+
+
+# ── Ready-made rule sets ─────────────────────────────────────────────────────
+
+def otp_send_rules(mobile_number: str, ip: str) -> tuple[Rule, ...]:
+    """Limits for any endpoint that sends an OTP (signup / signin / resend)."""
+    return (
+        Rule(
+            scope="otp_cooldown",
+            identifier=mobile_number,
+            limit=1,
+            window_seconds=settings.OTP_COOLDOWN_SECONDS,
+            message="Please wait before requesting another OTP.",
+        ),
+        Rule(
+            scope="otp_mobile_hour",
+            identifier=mobile_number,
+            limit=settings.OTP_MAX_PER_MOBILE_PER_HOUR,
+            window_seconds=3600,
+            message="Too many OTP requests for this number. Please try again later.",
+        ),
+        Rule(
+            scope="otp_mobile_day",
+            identifier=mobile_number,
+            limit=settings.OTP_MAX_PER_MOBILE_PER_DAY,
+            window_seconds=86400,
+            message="Daily OTP limit reached for this number. Please try again tomorrow.",
+        ),
+        Rule(
+            scope="otp_ip_hour",
+            identifier=ip,
+            limit=settings.OTP_MAX_PER_IP_PER_HOUR,
+            window_seconds=3600,
+            message="Too many OTP requests from this device. Please try again later.",
+        ),
+    )
+
+
+def otp_verify_rules(ip: str) -> tuple[Rule, ...]:
+    """Limits for verify-otp — stops brute-forcing codes across many accounts.
+
+    Per-account guessing is already capped by OTP_MAX_ATTEMPTS; this catches the
+    attacker who spreads guesses thinly across thousands of numbers instead."""
+    return (
+        Rule(
+            scope="verify_ip_hour",
+            identifier=ip,
+            limit=settings.VERIFY_MAX_PER_IP_PER_HOUR,
+            window_seconds=3600,
+            message="Too many verification attempts. Please try again later.",
+        ),
+    )
+
+
+async def reset_for(scope: str, identifier: str) -> None:
+    """Clear a counter early — used after a successful login so a legitimate
+    user isn't held to the cooldown from their own sign-in attempt."""
+    await rate_limits_collection.delete_many({"scope": scope, "identifier": identifier})

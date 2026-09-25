@@ -1,0 +1,100 @@
+"""
+utils/security.py — Token handling (access + refresh) and OTP generation/hashing.
+
+Token model
+-----------
+* **Access token** — a short-lived JWT (ACCESS_TOKEN_EXPIRE_MINUTES, default 30 min)
+  sent as `Authorization: Bearer <token>` on every protected request. It is
+  stateless: the server does not store it and cannot revoke an individual one
+  before it expires — that's what the short lifetime is for.
+
+* **Refresh token** — a long-lived opaque random string (not a JWT). Only its
+  SHA-256 hash is stored in MongoDB, so a database leak does not hand out
+  sessions. It is exchanged at POST /api/auth/refresh for a fresh access token,
+  and is *rotated* on every use: the old one is immediately revoked. If a
+  revoked refresh token is presented again (a sign it was stolen and replayed),
+  the whole token family is revoked and the user must log in again.
+"""
+
+import hashlib
+import hmac
+import secrets
+import string
+from datetime import datetime, timedelta, timezone
+
+from jose import JWTError, jwt
+
+from app.config import settings
+
+ACCESS_TOKEN_TYPE = "access"
+
+
+# ── Access tokens (JWT) ──────────────────────────────────────────────────────
+
+def create_access_token(subject: str) -> str:
+    """subject = the user's mobile_number, embedded as the 'sub' claim."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": subject,
+        "type": ACCESS_TOKEN_TYPE,
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    }
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+def decode_access_token(token: str) -> str | None:
+    """Return the 'sub' claim (mobile_number) if the token is a valid, unexpired
+    access token, else None."""
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError:
+        return None
+    # Reject anything that isn't an access token (e.g. a token minted elsewhere).
+    if payload.get("type") != ACCESS_TOKEN_TYPE:
+        return None
+    return payload.get("sub")
+
+
+def access_token_expires_in_seconds() -> int:
+    return settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+
+# ── Refresh tokens (opaque, stored hashed) ───────────────────────────────────
+
+def generate_refresh_token() -> str:
+    """A 64-char URL-safe random string — plenty of entropy, never stored raw."""
+    return secrets.token_urlsafe(48)
+
+
+def hash_token(token: str) -> str:
+    """Refresh tokens are high-entropy random values, so a plain SHA-256 is the
+    right tool here — key-stretching (bcrypt/argon2) buys nothing and would make
+    every API call slower."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def refresh_token_expiry() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+
+
+def new_token_family_id() -> str:
+    return secrets.token_hex(16)
+
+
+# ── OTP ──────────────────────────────────────────────────────────────────────
+
+def generate_otp() -> str:
+    # secrets, not random — OTPs are a security control.
+    return "".join(secrets.choice(string.digits) for _ in range(settings.OTP_LENGTH))
+
+
+def hash_otp(otp: str) -> str:
+    # OTPs are short-lived and low-entropy, but we still avoid storing them in
+    # plaintext in the DB. SHA-256 is sufficient here (not a password-hash case).
+    return hashlib.sha256(otp.encode()).hexdigest()
+
+
+def verify_otp_hash(otp: str, otp_hash: str) -> bool:
+    # Constant-time compare so a timing side channel can't leak the digest.
+    return hmac.compare_digest(hash_otp(otp), otp_hash)
