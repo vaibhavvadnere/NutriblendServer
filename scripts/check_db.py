@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app import database  # noqa: E402
-from app.config import settings  # noqa: E402
+from app.core import database  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 
 async def main() -> int:

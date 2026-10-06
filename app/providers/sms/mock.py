@@ -4,7 +4,7 @@ mock.py — Default provider. Sends nothing; logs the OTP so you can test locall
 
 import logging
 
-from app.utils.sms_providers.base import SMSProvider
+from app.providers.sms.base import SMSProvider
 
 logger = logging.getLogger("nutriblend.sms")
 

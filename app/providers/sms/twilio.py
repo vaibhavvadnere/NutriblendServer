@@ -17,8 +17,8 @@ import logging
 
 import httpx
 
-from app.config import settings
-from app.utils.sms_providers.base import SMSDeliveryError, SMSProvider
+from app.core.config import settings
+from app.providers.sms.base import SMSDeliveryError, SMSProvider
 
 logger = logging.getLogger("nutriblend.sms")
 

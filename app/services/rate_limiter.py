@@ -1,5 +1,5 @@
 """
-utils/ratelimit.py — Abuse protection for the OTP endpoints.
+services/rate_limiter.py — Abuse protection for the OTP endpoints.
 
 Why this exists
 ---------------
@@ -33,14 +33,11 @@ Design notes
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
-from fastapi import Request, status
-from pymongo import ReturnDocument
-
-from app.config import settings
-from app.database import rate_limits_collection
-from app.errors import APIError, ErrorCode
+from app.core.config import settings
+from app.core.exceptions import RateLimited
+from app.repositories import rate_limit_repo
 
 logger = logging.getLogger("nutriblend.ratelimit")
 
@@ -56,68 +53,24 @@ class Rule:
     message: str = "Too many requests. Please try again later."
 
 
-class RateLimitExceeded(APIError):
-    def __init__(self, retry_after: int, message: str, scope: str):
-        super().__init__(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            code=ErrorCode.RATE_LIMITED,
-            message=message,
-            details={"retry_after_seconds": retry_after},
-            headers={"Retry-After": str(retry_after)},
-        )
-        self.retry_after = retry_after
-        self.scope = scope
-
-
-def client_ip(request: Request) -> str:
-    """
-    The caller's IP.
-
-    Behind a proxy the socket address is the proxy's, so the real client is in
-    X-Forwarded-For. That header is trivially forged, so we only read it when
-    TRUST_PROXY_HEADERS is on — which should be true only when the app really
-    does sit behind a proxy you control. Getting this backwards either throttles
-    every user as one IP, or lets anyone bypass per-IP limits by sending a header.
-    """
-    if settings.TRUST_PROXY_HEADERS:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            # Left-most entry is the original client.
-            return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
-
-
 async def _consume(rule: Rule, now: datetime) -> None:
     """Increment one counter and raise if it has gone over the limit."""
     window_start_epoch = math.floor(now.timestamp() / rule.window_seconds) * rule.window_seconds
     window_end = datetime.fromtimestamp(window_start_epoch + rule.window_seconds, tz=timezone.utc)
     doc_id = f"{rule.scope}:{rule.identifier}:{window_start_epoch}"
 
-    doc = await rate_limits_collection.find_one_and_update(
-        {"_id": doc_id},
-        {
-            "$inc": {"count": 1},
-            "$setOnInsert": {
-                "scope": rule.scope,
-                "identifier": rule.identifier,
-                "expires_at": window_end,
-            },
-        },
-        upsert=True,
-        return_document=ReturnDocument.AFTER,
-    )
-
-    if doc["count"] > rule.limit:
+    count = await rate_limit_repo.increment(doc_id, rule.scope, rule.identifier, window_end)
+    if count > rule.limit:
         retry_after = max(1, int((window_end - now).total_seconds()))
         logger.warning(
             "Rate limit hit: scope=%s identifier=%s count=%d limit=%d",
-            rule.scope, rule.identifier, doc["count"], rule.limit,
+            rule.scope, rule.identifier, count, rule.limit,
         )
-        raise RateLimitExceeded(retry_after, rule.message, rule.scope)
+        raise RateLimited(retry_after, rule.message, rule.scope)
 
 
 async def enforce(*rules: Rule) -> None:
-    """Apply every rule. Raises RateLimitExceeded on the first one that trips."""
+    """Apply every rule. Raises RateLimited on the first one that trips."""
     if not settings.RATE_LIMIT_ENABLED:
         return
     now = datetime.now(timezone.utc)
@@ -180,4 +133,4 @@ def otp_verify_rules(ip: str) -> tuple[Rule, ...]:
 async def reset_for(scope: str, identifier: str) -> None:
     """Clear a counter early — used after a successful login so a legitimate
     user isn't held to the cooldown from their own sign-in attempt."""
-    await rate_limits_collection.delete_many({"scope": scope, "identifier": identifier})
+    await rate_limit_repo.delete_for(scope, identifier)

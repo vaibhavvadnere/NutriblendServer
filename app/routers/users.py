@@ -1,43 +1,43 @@
 """
-routers/users.py — Profile endpoints.
+routers/users.py — Profile endpoints (HTTP only; rules live in services/user_service.py).
 """
 
-from bson import ObjectId
 from fastapi import APIRouter, Depends, status
 
-from app.config import settings
-from app.deps import get_current_user
-from app.database import users_collection
-from app.errors import APIError, ErrorCode
+from app.core.config import settings
+from app.core.deps import get_current_user
+from app.schemas.common import ERROR_RESPONSES, ApiResponse, ok
 from app.schemas.user import UserCreate, UserOut, UserUpdate
-from app.services import users as user_service
+from app.services import user_service
 
-router = APIRouter(prefix=f"{settings.API_PREFIX}/users", tags=["users"])
+router = APIRouter(
+    prefix=f"{settings.API_PREFIX}/users", tags=["users"], responses=ERROR_RESPONSES
+)
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=ApiResponse[UserOut])
 async def get_me(current_user: dict = Depends(get_current_user)):
     """The signed-in user's own profile."""
-    return user_service.to_user_out(current_user)
+    return ok(user_service.to_user_out(current_user), "Profile fetched successfully")
 
 
-@router.patch("/me", response_model=UserOut)
+@router.patch("/me", response_model=ApiResponse[UserOut])
 async def update_me(payload: UserUpdate, current_user: dict = Depends(get_current_user)):
     """
-    Update your own name and/or email. Only the fields you send are changed.
+    Update your own name, email and/or state. Only the fields you send are changed.
 
     The mobile number is deliberately not editable here — changing it is a
     re-verification flow (prove the new number by OTP), not a profile edit.
     """
     updated = await user_service.update_profile(
-        current_user["mobile_number"], payload.name, payload.email
+        current_user["mobile_number"], payload.name, payload.email, payload.state
     )
-    return user_service.to_user_out(updated)
+    return ok(user_service.to_user_out(updated), "Profile updated successfully")
 
 
 @router.post(
     "",
-    response_model=UserOut,
+    response_model=ApiResponse[UserOut],
     status_code=status.HTTP_201_CREATED,
     deprecated=True,
     summary="Create a user directly (admin/seeding only)",
@@ -51,24 +51,16 @@ async def create_user(payload: UserCreate):
     mobile number. The account still has to pass OTP verification to become active.
     """
     doc = await user_service.create_or_refresh_pending(
-        payload.mobile_number, payload.name, payload.email
+        payload.mobile_number, payload.name, payload.email, payload.state
     )
-    return user_service.to_user_out(doc)
+    return ok(user_service.to_user_out(doc), "User created successfully")
 
 
-@router.get("/{user_id}", response_model=UserOut)
+@router.get("/{user_id}", response_model=ApiResponse[UserOut])
 async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
     """
     Fetch a user by id. Requires authentication — an open endpoint here would
     let anyone walk the user table by guessing ObjectIds.
     """
-    if not ObjectId.is_valid(user_id):
-        raise APIError(
-            status.HTTP_400_BAD_REQUEST, ErrorCode.VALIDATION_ERROR, "Invalid user id"
-        )
-    doc = await users_collection.find_one({"_id": ObjectId(user_id)})
-    if not doc:
-        raise APIError(
-            status.HTTP_404_NOT_FOUND, ErrorCode.ACCOUNT_NOT_FOUND, "User not found"
-        )
-    return user_service.to_user_out(doc)
+    user = await user_service.get_by_id(user_id)
+    return ok(user_service.to_user_out(user), "User fetched successfully")

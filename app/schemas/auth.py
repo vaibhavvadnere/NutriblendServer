@@ -6,7 +6,12 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
-from app.schemas.user import UserOut, validate_mobile_field, validate_name_field
+from app.schemas.user import (
+    UserOut,
+    validate_mobile_field,
+    validate_name_field,
+    validate_state_field,
+)
 
 
 class SignupRequest(BaseModel):
@@ -14,6 +19,7 @@ class SignupRequest(BaseModel):
     mobile_number: str
     name: str = Field(min_length=1, max_length=60)
     email: Optional[EmailStr] = None
+    state: Optional[str] = None
 
     @field_validator("mobile_number")
     @classmethod
@@ -24,6 +30,11 @@ class SignupRequest(BaseModel):
     @classmethod
     def _name(cls, v: str) -> str:
         return validate_name_field(v)
+
+    @field_validator("state")
+    @classmethod
+    def _state(cls, v: Optional[str]) -> Optional[str]:
+        return validate_state_field(v)
 
 
 class SigninRequest(BaseModel):
@@ -55,7 +66,6 @@ class OTPVerify(BaseModel):
 
 
 class OTPSentResponse(BaseModel):
-    message: str
     #: Masked, so the app can show "OTP sent to 98XXXXXX10" without echoing
     #: the full number back onto a shared screen.
     mobile_number: str
@@ -87,8 +97,8 @@ class AccessTokenResponse(BaseModel):
     expires_in: int
 
 
-class MessageResponse(BaseModel):
-    message: str
+class LogoutAllResponse(BaseModel):
+    revoked_sessions: int
 
 
 # Kept so any existing caller of the old endpoint keeps working.

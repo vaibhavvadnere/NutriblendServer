@@ -1,13 +1,14 @@
 """
-errors.py — One error shape for the whole API.
+core/errors.py — One error shape for the whole API.
 
 Every failure, whatever causes it, reaches the client as:
 
     HTTP <status>
     {
+      "success": false,
+      "message": "An account with this mobile number already exists.",
       "error": {
         "code": "ACCOUNT_EXISTS",
-        "message": "An account with this mobile number already exists.",
         "details": { ... }            # optional, omitted when empty
       }
     }
@@ -15,6 +16,9 @@ Every failure, whatever causes it, reaches the client as:
 The **code** is the part the mobile app should branch on. Messages are for
 humans and will be reworded (and eventually translated); codes are a contract
 and must not change once the app ships.
+
+Services raise DomainError subclasses (app/core/exceptions.py), which carry no
+HTTP information; _DOMAIN_STATUS below decides the status code for each.
 """
 
 from typing import Any, Optional
@@ -24,43 +28,60 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.exceptions import (
+    AccountBlocked,
+    AccountExists,
+    AccountGone,
+    AccountNotFound,
+    DomainError,
+    EmailInUse,
+    ErrorCode,
+    InvalidUserId,
+    OtpAttemptsExceeded,
+    OtpExpired,
+    OtpIncorrect,
+    OtpNotRequested,
+    OtpSendFailed,
+    RateLimited,
+    RefreshTokenInvalid,
+    RefreshTokenReused,
+)
 
-class ErrorCode:
-    """Every code the API can return. Keep this list and the app in sync."""
+__all__ = ["APIError", "ErrorCode", "error_body", "register_error_handlers", "status_for"]
 
-    # Request validation
-    VALIDATION_ERROR = "VALIDATION_ERROR"
-    INVALID_MOBILE_NUMBER = "INVALID_MOBILE_NUMBER"
 
-    # Account lifecycle
-    ACCOUNT_EXISTS = "ACCOUNT_EXISTS"
-    ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND"
-    ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED"
-    EMAIL_IN_USE = "EMAIL_IN_USE"
+# The one place a business error becomes an HTTP status.
+_DOMAIN_STATUS: dict[type[DomainError], int] = {
+    AccountNotFound: status.HTTP_404_NOT_FOUND,
+    AccountGone: status.HTTP_401_UNAUTHORIZED,
+    AccountExists: status.HTTP_409_CONFLICT,
+    AccountBlocked: status.HTTP_403_FORBIDDEN,
+    EmailInUse: status.HTTP_409_CONFLICT,
+    InvalidUserId: status.HTTP_400_BAD_REQUEST,
+    OtpNotRequested: status.HTTP_400_BAD_REQUEST,
+    OtpExpired: status.HTTP_400_BAD_REQUEST,
+    OtpIncorrect: status.HTTP_400_BAD_REQUEST,
+    OtpAttemptsExceeded: status.HTTP_429_TOO_MANY_REQUESTS,
+    OtpSendFailed: status.HTTP_502_BAD_GATEWAY,
+    RefreshTokenInvalid: status.HTTP_401_UNAUTHORIZED,
+    RefreshTokenReused: status.HTTP_401_UNAUTHORIZED,
+    RateLimited: status.HTTP_429_TOO_MANY_REQUESTS,
+}
 
-    # OTP
-    OTP_NOT_REQUESTED = "OTP_NOT_REQUESTED"
-    OTP_EXPIRED = "OTP_EXPIRED"
-    OTP_INCORRECT = "OTP_INCORRECT"
-    OTP_ATTEMPTS_EXCEEDED = "OTP_ATTEMPTS_EXCEEDED"
-    OTP_SEND_FAILED = "OTP_SEND_FAILED"
 
-    # Tokens / auth
-    UNAUTHORIZED = "UNAUTHORIZED"
-    INVALID_TOKEN = "INVALID_TOKEN"
-    REFRESH_TOKEN_INVALID = "REFRESH_TOKEN_INVALID"
-    REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED"
-
-    # Throttling
-    RATE_LIMITED = "RATE_LIMITED"
-
-    # Catch-alls
-    NOT_FOUND = "NOT_FOUND"
-    INTERNAL_ERROR = "INTERNAL_ERROR"
+def status_for(exc: DomainError) -> int:
+    """HTTP status for a domain error (walks the class hierarchy, so a subclass
+    inherits its parent's status unless it has its own entry)."""
+    for cls in type(exc).__mro__:
+        if cls in _DOMAIN_STATUS:
+            return _DOMAIN_STATUS[cls]
+    return status.HTTP_500_INTERNAL_SERVER_ERROR
 
 
 class APIError(Exception):
-    """Raise this anywhere in the app instead of HTTPException."""
+    """HTTP-layer error, for failures that only make sense in HTTP terms (a
+    missing or malformed Authorization header). Business rules raise a
+    DomainError from app.core.exceptions instead."""
 
     def __init__(
         self,
@@ -79,10 +100,11 @@ class APIError(Exception):
 
 
 def error_body(code: str, message: str, details: Optional[dict] = None) -> dict:
-    body: dict[str, Any] = {"code": code, "message": message}
+    """The failure envelope — see app/schemas/common.py for both shapes."""
+    error: dict[str, Any] = {"code": code}
     if details:
-        body["details"] = details
-    return {"error": body}
+        error["details"] = details
+    return {"success": False, "message": message, "error": error}
 
 
 # Map FastAPI's own status codes onto our vocabulary, for errors raised by the
@@ -102,6 +124,15 @@ def register_error_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             content=error_body(exc.code, exc.message, exc.details),
             headers=exc.headers or None,
+        )
+
+    @app.exception_handler(DomainError)
+    async def _domain_error(request: Request, exc: DomainError):
+        headers = {"Retry-After": str(exc.retry_after)} if isinstance(exc, RateLimited) else None
+        return JSONResponse(
+            status_code=status_for(exc),
+            content=error_body(exc.code, exc.message, exc.details),
+            headers=headers,
         )
 
     @app.exception_handler(RequestValidationError)

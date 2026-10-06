@@ -8,14 +8,16 @@ Run with:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import database
-from app.config import settings
-from app.errors import register_error_handlers
+from app.core import database
+from app.core.config import settings
+from app.core.errors import register_error_handlers
+from app.providers.sms import current_provider_name
 from app.routers import auth, users
-from app.utils.sms import current_provider_name
+from app.schemas.common import ok
+from app.utils.network import lan_ip
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,7 +48,8 @@ app = FastAPI(
     ),
 )
 
-# Every error leaves the API as {"error": {"code", "message"}} — see app/errors.py.
+# Every response uses one envelope: {"success", "message", "data" | "error"} —
+# see app/schemas/common.py and app/core/errors.py.
 register_error_handlers(app)
 
 # CORS: allow browsers on any origin to call this API during development.
@@ -63,18 +66,37 @@ app.include_router(auth.router)
 
 
 @app.get("/api/health", tags=["health"])
-async def health():
-    """Liveness + dependency check. `database` is "ok" only if Mongo answers."""
+async def health(request: Request):
+    """
+    Liveness + dependency check. `database` is "ok" only if Mongo answers.
+
+    Also reports the URLs this server was reached on:
+
+    - `base_url` / `api_base_url` — as seen by this request.
+    - `lan_base_url` (development only) — this machine's address on the local
+      network. Put this in the mobile app's BASE_URL when testing on a real
+      phone connected to the same Wi-Fi. Hidden in production.
+    """
     db_status = "ok"
     try:
         await database.ping()
     except Exception as exc:  # noqa: BLE001 — health must never raise
         db_status = f"unavailable: {type(exc).__name__}"
 
-    return {
+    base_url = str(request.base_url)
+    data = {
         "status": "ok" if db_status == "ok" else "degraded",
         "app": settings.APP_NAME,
         "env": settings.ENV,
         "database": db_status,
         "sms_provider": current_provider_name(),
+        "base_url": base_url,
+        "api_base_url": f"{base_url}{settings.API_PREFIX.strip('/')}/",
     }
+    if not settings.is_production:
+        ip = lan_ip()
+        port = request.url.port
+        data["lan_base_url"] = f"http://{ip}{f':{port}' if port else ''}/" if ip else None
+
+    healthy = db_status == "ok"
+    return ok(data, "Service is healthy" if healthy else "Service is degraded")

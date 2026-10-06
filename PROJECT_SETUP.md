@@ -11,12 +11,12 @@ Last updated: 2026-09-24
 
 - Users are identified by **mobile number**, not email/password.
 - **All endpoints are versioned** under `/api/v1`. `/api/health` is deliberately unversioned — it is infrastructure, not API surface.
-- **Sign up**: `POST /api/v1/auth/signup` `{ name, mobile_number, email? }` — creates a **pending** account and sends an OTP. The account is unusable until the OTP is verified, so nobody can reserve a number they don't control.
+- **Sign up**: `POST /api/v1/auth/signup` `{ name, mobile_number, email?, state? }` — creates a **pending** account and sends an OTP. The account is unusable until the OTP is verified, so nobody can reserve a number they don't control.
 - **Sign in**: `POST /api/v1/auth/signin` `{ mobile_number }` — sends an OTP to an existing account.
 - **Both** end at `POST /api/v1/auth/verify-otp`, which activates the account and returns an **access token + refresh token**. One OTP screen in the app, one "I'm logged in" code path.
 - **Account lifecycle**: `pending` → `active` → (`blocked`, admin only). Abandoned pending signups are auto-deleted after `PENDING_USER_TTL_HOURS`, so no number is locked up forever.
 - **Rate limiting**: every OTP-sending endpoint is throttled per mobile number and per IP, with `429` + `Retry-After`. Quota is consumed *before* the account lookup, so probing for registered numbers costs the attacker quota.
-- **Errors**: every failure returns `{"error": {"code", "message", "details?"}}`. Branch on `code`, never on the message text.
+- **Responses**: every endpoint returns `{"success", "message", "data"}` on success and `{"success": false, "message", "error": {"code", "details?"}}` on failure. Branch on `error.code`, never on the message text.
 - **Token model**:
   - *Access token* — short-lived JWT (30 min by default), sent as `Authorization: Bearer <token>` on every protected request. Stateless.
   - *Refresh token* — long-lived (30 days), opaque random string, stored **hashed** in MongoDB. Exchanged at `POST /api/auth/refresh` for a new access token, and **rotated on every use**. Replaying an already-used refresh token revokes the entire session (theft detection).
@@ -32,31 +32,39 @@ Last updated: 2026-09-24
 ```
 NutriblendServer/
 ├── app/
-│   ├── main.py            # FastAPI entrypoint, lifespan (DB connect), CORS, routers
-│   ├── config.py          # Settings loaded from .env (pydantic-settings)
-│   ├── database.py        # MongoDB connection (motor), ping, index setup, Atlas TLS
-│   ├── deps.py            # Shared dependency: get_current_user (JWT auth)
-│   ├── errors.py          # APIError + ErrorCode + handlers — one error shape for all
-│   ├── routers/
-│   │   ├── users.py       # GET/PATCH /users/me, GET /users/{id}, POST /users (deprecated)
-│   │   └── auth.py        # signup, signin, resend-otp, verify-otp, refresh, logout(-all)
-│   ├── services/
-│   │   └── users.py       # Account lifecycle: create/refresh pending, activate, block
+│   ├── main.py              # FastAPI entrypoint, lifespan (DB connect), CORS, routers
+│   ├── core/                # Cross-cutting plumbing
+│   │   ├── config.py        # Settings loaded from .env (pydantic-settings)
+│   │   ├── database.py      # MongoDB connection (motor), ping, index setup, Atlas TLS
+│   │   ├── security.py      # Access-token JWTs, refresh-token generation, OTP hashing
+│   │   ├── exceptions.py    # ErrorCode + domain errors raised by services (no HTTP)
+│   │   ├── errors.py        # Domain error -> HTTP status mapping; one error shape for all
+│   │   └── deps.py          # get_current_user (JWT auth) + client IP resolution
+│   ├── routers/             # HTTP only: validate input, call a service, return a schema
+│   │   ├── auth.py          # signup, signin, resend-otp, verify-otp, refresh, logout(-all)
+│   │   └── users.py         # GET/PATCH /users/me, GET /users/{id}, POST /users (deprecated)
+│   ├── services/            # All business rules (no FastAPI, no Mongo queries)
+│   │   ├── auth_service.py  # OTP issue/verify flow, token refresh, logout
+│   │   ├── user_service.py  # Account lifecycle: create/refresh pending, activate, block
+│   │   ├── token_service.py # Refresh-token lifecycle: issue / rotate / revoke / families
+│   │   └── rate_limiter.py  # Fixed-window limits and the OTP rule sets
+│   ├── repositories/        # The ONLY code that touches MongoDB, one module per collection
+│   │   ├── user_repo.py
+│   │   ├── otp_repo.py
+│   │   ├── refresh_token_repo.py
+│   │   └── rate_limit_repo.py
+│   ├── providers/
+│   │   └── sms/             # send_otp_sms() + one module per gateway, same interface
+│   │       ├── base.py      # SMSProvider ABC + SMSDeliveryError + number formatting
+│   │       ├── mock.py      # Default — logs the OTP, sends nothing
+│   │       ├── msg91.py
+│   │       ├── twilio.py
+│   │       └── fast2sms.py
 │   ├── schemas/
-│   │   ├── user.py        # UserCreate, UserUpdate, UserOut + shared field validators
-│   │   └── auth.py        # SignupRequest, SigninRequest, OTPVerify, TokenResponse, ...
+│   │   ├── user.py          # UserCreate, UserUpdate, UserOut + shared field validators
+│   │   └── auth.py          # SignupRequest, SigninRequest, OTPVerify, TokenResponse, ...
 │   └── utils/
-│       ├── phone.py       # Mobile-number normalisation (+91 / 0 / spaces / dashes)
-│       ├── ratelimit.py   # Mongo-backed fixed-window limits + client IP resolution
-│       ├── security.py    # Access-token JWTs, refresh-token generation, OTP hashing
-│       ├── tokens.py      # Refresh-token lifecycle: issue / rotate / revoke / families
-│       ├── sms.py         # Public OTP delivery interface (send_otp_sms)
-│       └── sms_providers/ # One module per gateway, same interface
-│           ├── base.py    # SMSProvider ABC + SMSDeliveryError + number formatting
-│           ├── mock.py    # Default — logs the OTP, sends nothing
-│           ├── msg91.py
-│           ├── twilio.py
-│           └── fast2sms.py
+│       └── phone.py         # Mobile-number normalisation (+91 / 0 / spaces / dashes)
 ├── scripts/
 │   ├── check_db.py        # Verify the MONGO_URI in .env before starting the server
 │   └── verify_atlas.py    # Run the real signup/signin flow against the live database
@@ -71,6 +79,13 @@ NutriblendServer/
 ├── API_ROADMAP.md           # Design decisions + the product roadmap ahead
 └── PROJECT_SETUP.md         # this file
 ```
+
+**Architecture — Router → Service → Repository.** A request flows one way:
+`routers/` (HTTP) → `services/` (business rules) → `repositories/` (MongoDB).
+Services raise domain errors from `core/exceptions.py`; `core/errors.py` is the only
+place that turns them into HTTP status codes. External gateways (SMS today) sit
+behind a provider interface in `providers/`, chosen from `.env`.
+
 
 ---
 
@@ -108,7 +123,7 @@ NutriblendServer/
 17. ✅ **Rate limiting** — per-number cooldown plus hourly/daily caps, and per-IP caps on both
     OTP sending and verification. Mongo-backed, so it works across multiple workers. Returns
     `429` with `Retry-After`.
-18. ✅ **Machine-readable error codes** — every error is `{"error": {"code", "message"}}`, so the
+18. ✅ **Machine-readable error codes** — every error carries `error.code` inside the standard response envelope, so the
     app can branch on `ACCOUNT_EXISTS` vs `ACCOUNT_NOT_FOUND` without matching English strings,
     and messages can be reworded or translated without an app release.
 19. ✅ **API versioning** — everything moved under `/api/v1`.
@@ -183,7 +198,7 @@ BASE=http://localhost:8000/api/v1
 #    9876543210 | +919876543210 | +91 98765 43210 | 09876543210
 curl -X POST $BASE/auth/signup \
   -H "Content-Type: application/json" \
-  -d '{"mobile_number": "+91 98765 43210", "name": "Boss", "email": "boss@example.com"}'
+  -d '{"mobile_number": "+91 98765 43210", "name": "Boss", "email": "boss@example.com", "state": "Maharashtra"}'
 # -> 201 {"message":"OTP sent successfully","mobile_number":"98XXXXXX10",
 #         "expires_in_minutes":5,"resend_available_in_seconds":60,
 #         "is_new_account":true,"dev_otp":"482913"}
@@ -226,17 +241,31 @@ curl -X POST $BASE/auth/logout \
 curl -X POST $BASE/auth/logout-all -H "Authorization: Bearer <access_token>"
 ```
 
-### Error format
+### Response format
 
-Every error, from any endpoint, has the same shape:
+Every endpoint uses the same envelope (defined in `app/schemas/common.py`). HTTP status
+codes stay meaningful — `success` is a convenience, not a replacement for the status.
+
+Success:
 
 ```json
-{ "error": { "code": "ACCOUNT_EXISTS",
-             "message": "An account with this mobile number already exists. Please sign in instead.",
-             "details": {} } }
+{ "success": true,
+  "message": "OTP sent successfully",
+  "data": { "mobile_number": "98XXXXXX10", "expires_in_minutes": 5, "...": "..." } }
 ```
 
-**Branch on `code`, never on `message`** — messages will be reworded and eventually
+Failure:
+
+```json
+{ "success": false,
+  "message": "An account with this mobile number already exists. Please sign in instead.",
+  "error": { "code": "ACCOUNT_EXISTS" } }
+```
+
+`error.details` appears only when there is something to add — e.g.
+`attempts_remaining`, `retry_after_seconds`, or `fields` for validation errors.
+
+**Branch on `error.code`, never on `message`** — messages will be reworded and eventually
 translated; codes are a contract. The ones the sign-up / sign-in screens need:
 
 | Code | HTTP | What the app should do |
@@ -308,7 +337,7 @@ Notes:
   clear error naming the exact `.env` keys, rather than failing silently.
 - If the gateway rejects the message, `request-otp` returns `502` and the pending OTP is
   deleted, so the user is never told "OTP sent" when it wasn't.
-- To add another gateway: write a class in `app/utils/sms_providers/` that subclasses
+- To add another gateway: write a class in `app/providers/sms/` that subclasses
   `SMSProvider`, register it in that package's `_REGISTRY`. Nothing else changes.
 - **DLT registration (India):** any provider sending to Indian numbers needs your sender ID
   and message template registered with the telecom regulator. Budget a few days for this.

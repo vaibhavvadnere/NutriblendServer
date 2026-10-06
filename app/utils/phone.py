@@ -16,7 +16,7 @@ The country code is added back only when an SMS gateway needs it.
 
 import re
 
-from app.config import settings
+from app.core.config import settings
 
 # Indian mobile numbers are 10 digits starting 6-9.
 MOBILE_REGEX = re.compile(r"^[6-9]\d{9}$")

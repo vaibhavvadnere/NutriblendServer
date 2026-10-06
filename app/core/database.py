@@ -18,7 +18,7 @@ import certifi
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import PyMongoError
 
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger("nutriblend.db")
 

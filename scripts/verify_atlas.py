@@ -25,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
-from app import database  # noqa: E402
-from app.config import settings  # noqa: E402
+from app.core import database  # noqa: E402
+from app.core.config import settings  # noqa: E402
 
 TEST_MOBILE = "9999900001"
 # NB: not .invalid/.test/.localhost/example.com — email-validator rejects
@@ -81,7 +81,7 @@ async def main() -> int:
 
             print("1. Health")
             r = await c.get("/api/health")
-            check("health reports database ok", r.json().get("database") == "ok", r.text)
+            check("health reports database ok", r.json().get("data", {}).get("database") == "ok", r.text)
 
             print("\n2. Signup against the real database")
             r = await c.post(
@@ -89,7 +89,7 @@ async def main() -> int:
                 json={"mobile_number": TEST_MOBILE, "name": "Atlas Verify", "email": TEST_EMAIL},
             )
             check("signup -> 201", r.status_code == 201, r.text)
-            otp = r.json().get("dev_otp")
+            otp = r.json().get("data", {}).get("dev_otp")
             check("dev_otp present (ENV != production)", bool(otp), r.text)
 
             doc = await database.users_collection.find_one({"mobile_number": TEST_MOBILE})
@@ -148,7 +148,7 @@ async def main() -> int:
             print("\n4. Verify OTP -> tokens")
             r = await c.post(f"{V1}/auth/verify-otp", json={"mobile_number": TEST_MOBILE, "otp": otp})
             check("verify -> 200", r.status_code == 200, r.text)
-            body = r.json() if r.status_code == 200 else {}
+            body = r.json().get("data", {}) if r.status_code == 200 else {}
             access = body.get("access_token")
             refresh = body.get("refresh_token")
             check("account activated", body.get("user", {}).get("status") == "active", str(body.get("user")))
@@ -162,7 +162,7 @@ async def main() -> int:
             check("/me -> 200", r.status_code == 200, r.text)
             r = await c.post(f"{V1}/auth/refresh", json={"refresh_token": refresh})
             check("refresh -> 200", r.status_code == 200, r.text)
-            rotated = r.json().get("refresh_token") if r.status_code == 200 else None
+            rotated = r.json().get("data", {}).get("refresh_token") if r.status_code == 200 else None
             check("refresh token rotated", bool(rotated) and rotated != refresh)
             r = await c.post(f"{V1}/auth/refresh", json={"refresh_token": refresh})
             check("replaying the old token -> 401", r.status_code == 401, r.text)

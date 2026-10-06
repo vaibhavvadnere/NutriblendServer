@@ -23,7 +23,10 @@ All endpoints are versioned under `/api/v1`. `/api/health` is unversioned.
 | POST | `/api/v1/users` | — | *Deprecated* — admin/seeding only |
 
 Sign up and sign in both end at `verify-otp`, so the app needs one OTP screen.
-Every error returns `{"error": {"code", "message"}}` — branch on `code`.
+Every response uses one envelope, and HTTP status codes stay meaningful:
+
+- Success: `{"success": true, "message": "...", "data": {...}}`
+- Failure: `{"success": false, "message": "...", "error": {"code": "...", "details": {...}}}` — branch on `error.code`.
 
 ## Quick start
 
