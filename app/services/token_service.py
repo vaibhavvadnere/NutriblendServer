@@ -16,6 +16,7 @@ from typing import Optional
 
 from app.core.exceptions import RefreshTokenInvalid, RefreshTokenReused
 from app.core.security import (
+    SCOPE_APP,
     generate_refresh_token,
     hash_token,
     new_token_family_id,
@@ -29,9 +30,12 @@ class IssuedRefreshToken:
     token: str
     family_id: str
     expires_at: datetime
+    scope: str = SCOPE_APP
 
 
-async def issue_refresh_token(mobile_number: str, family_id: Optional[str] = None) -> IssuedRefreshToken:
+async def issue_refresh_token(
+    mobile_number: str, family_id: Optional[str] = None, scope: str = SCOPE_APP
+) -> IssuedRefreshToken:
     """Mint a new refresh token, starting a new family unless one is given."""
     token = generate_refresh_token()
     family = family_id or new_token_family_id()
@@ -42,6 +46,7 @@ async def issue_refresh_token(mobile_number: str, family_id: Optional[str] = Non
             "token_hash": hash_token(token),
             "mobile_number": mobile_number,
             "family_id": family,
+            "scope": scope,
             "created_at": datetime.now(timezone.utc),
             "expires_at": expires_at,
             "revoked_at": None,
@@ -49,14 +54,15 @@ async def issue_refresh_token(mobile_number: str, family_id: Optional[str] = Non
             "replaced_by": None,
         }
     )
-    return IssuedRefreshToken(token=token, family_id=family, expires_at=expires_at)
+    return IssuedRefreshToken(token=token, family_id=family, expires_at=expires_at, scope=scope)
 
 
 async def rotate_refresh_token(token: str) -> tuple[str, IssuedRefreshToken]:
     """
     Validate a refresh token and swap it for a fresh one in the same family.
 
-    Returns (mobile_number, new_token). Raises RefreshTokenInvalid if the token
+    Returns (mobile_number, new_token); new_token.scope is the session's scope,
+    unchanged by rotation. Raises RefreshTokenInvalid if the token
     is unknown or expired, and RefreshTokenReused (after killing the family) if
     it was already used.
     """
@@ -73,7 +79,9 @@ async def rotate_refresh_token(token: str) -> tuple[str, IssuedRefreshToken]:
     if _as_utc(record["expires_at"]) <= datetime.now(timezone.utc):
         raise RefreshTokenInvalid("Refresh token has expired. Please log in again.")
 
-    new_token = await issue_refresh_token(record["mobile_number"], family_id=record["family_id"])
+    new_token = await issue_refresh_token(
+        record["mobile_number"], family_id=record["family_id"], scope=record.get("scope", SCOPE_APP)
+    )
     await refresh_token_repo.mark_rotated(
         record["_id"], replaced_by=hash_token(new_token.token), when=datetime.now(timezone.utc)
     )

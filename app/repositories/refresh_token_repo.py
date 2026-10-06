@@ -6,6 +6,7 @@ Stored document shape:
       token_hash:    sha256 of the opaque token   (unique index)
       mobile_number: who it belongs to
       family_id:     ties rotations of one login session together
+      scope:         "app" | "admin" (missing = "app"); kept across rotations
       created_at, expires_at (TTL index),
       revoked_at:    None while usable
       revoked_reason: "rotated" | "logout" | "logout_all" | "reuse_detected"

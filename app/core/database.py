@@ -43,6 +43,7 @@ users_collection = db["users"]
 otps_collection = db["otps"]
 refresh_tokens_collection = db["refresh_tokens"]
 rate_limits_collection = db["rate_limits"]
+videos_collection = db["videos"]
 
 
 def describe_connection() -> str:
@@ -67,6 +68,10 @@ async def init_indexes() -> None:
     # signups racing each other — application checks alone cannot guarantee it.
     await users_collection.create_index("mobile_number", unique=True)
     await users_collection.create_index("status")
+    # Admin dashboard: newest-first user list and signup / login statistics.
+    await users_collection.create_index("created_at")
+    await users_collection.create_index("last_login_at")
+    await users_collection.create_index("role")
 
     if settings.ENFORCE_UNIQUE_EMAIL:
         # Sparse + unique: at most one account per email address, but any number
@@ -90,6 +95,13 @@ async def init_indexes() -> None:
     await refresh_tokens_collection.create_index("mobile_number")
     # TTL index: expired refresh tokens clean themselves up.
     await refresh_tokens_collection.create_index("expires_at", expireAfterSeconds=0)
+
+    # Videos: app list (published, ordered) and admin list/filters.
+    await videos_collection.create_index([("status", 1), ("sort_order", 1), ("published_at", -1)])
+    await videos_collection.create_index([("category", 1), ("status", 1)])
+    await videos_collection.create_index("created_at")
+    # Abandoned uploads are found (and cleaned up, files included) by this.
+    await videos_collection.create_index("upload.expires_at")
 
     # Rate-limit counters expire themselves, so the collection stays small
     # without any cleanup job.

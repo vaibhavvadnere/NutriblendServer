@@ -2,7 +2,8 @@
 schemas/auth.py — Request/response models for signup, signin and tokens.
 """
 
-from typing import Optional
+from datetime import datetime
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -87,6 +88,9 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    #: "app" (mobile app session) or "admin" (dashboard session). Decided by the
+    #: sign-in endpoint that sent the OTP, never by the verify-otp request.
+    scope: Literal["app", "admin"] = "app"
     user: UserOut
 
 
@@ -95,6 +99,7 @@ class AccessTokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    scope: Literal["app", "admin"] = "app"
 
 
 class LogoutAllResponse(BaseModel):
@@ -103,3 +108,46 @@ class LogoutAllResponse(BaseModel):
 
 # Kept so any existing caller of the old endpoint keeps working.
 OTPRequest = SigninRequest
+
+
+class DeleteAccountRequest(BaseModel):
+    """
+    POST /auth/delete-account — one body, two phases.
+
+    Send just the number to start (an OTP goes out). Send the number *and* the
+    OTP to actually delete. Deliberately one endpoint so the app has one call
+    to wire up.
+    """
+    mobile_number: str
+    #: Omit to request the OTP; include it to confirm the deletion.
+    otp: Optional[str] = Field(default=None, min_length=4, max_length=10)
+
+    @field_validator("mobile_number")
+    @classmethod
+    def _mobile(cls, v: str) -> str:
+        return validate_mobile_field(v)
+
+    @field_validator("otp")
+    @classmethod
+    def _otp(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v.isdigit():
+            raise ValueError("OTP must contain digits only")
+        return v
+
+
+class DeleteAccountResponse(BaseModel):
+    """Covers both phases; `deleted` tells the app which one just happened."""
+    #: True when this call sent an OTP and changed nothing.
+    otp_sent: bool
+    #: True when the account is now gone.
+    deleted: bool
+    #: Masked, e.g. "98XXXXXX10".
+    mobile_number: str
+    expires_in_minutes: Optional[int] = None
+    resend_available_in_seconds: Optional[int] = None
+    #: Only while ENV != production.
+    dev_otp: Optional[str] = None
+    deleted_at: Optional[datetime] = None

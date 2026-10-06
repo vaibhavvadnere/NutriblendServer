@@ -404,6 +404,22 @@ Previous smoke test (2026-09-21, 39 checks, all passed):
 
 ## 10. Change log
 
+- **2026-09-30** — **Account deletion.** `POST /api/v1/auth/delete-account`: send the mobile
+  number to get an OTP, send number + OTP to delete. No sign-in needed — holding the OTP is
+  the proof of ownership. Soft delete: the row survives as an audit tombstone (`status:
+  "deleted"`, `deleted_at`) with name and email scrubbed. **The mobile number stays on the
+  tombstone**, and because it carries a unique index that is what permanently blocks
+  re-registration: signup, signin, resend-otp and delete all answer `403 ACCOUNT_DELETED`
+  with a message telling the user to contact support. Releasing a number is an admin action.
+  The email *is* freed and can be reused. All sessions are revoked on deletion, so existing
+  access and refresh tokens stop working at once. OTP `purpose` is now enforced in both directions: a delete OTP cannot be
+  exchanged for a session at `/auth/verify-otp`, and a sign-in OTP cannot delete an account.
+  Blocked accounts are refused (deleting one would shed the ban by re-registering) and admin
+  accounts cannot be deleted from the app. Deleted tombstones are excluded from every dashboard
+  count and listing. New code `ACCOUNT_DELETED`. 22 checks passing.
+  ⚠️ **Gap:** there is no admin endpoint to release a number or restore an account yet, so
+  "contact support" currently has no mechanism behind it short of editing MongoDB directly.
+
 - **2026-09-24 (client)** — Added `clients/android/`: a drop-in Kotlin API client
   (Retrofit + Moshi) with EncryptedSharedPreferences token storage and an OkHttp
   Authenticator that renews access tokens on 401. The authenticator serialises refreshes

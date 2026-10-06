@@ -23,6 +23,7 @@ class ErrorCode:
     ACCOUNT_EXISTS = "ACCOUNT_EXISTS"
     ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND"
     ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED"
+    ACCOUNT_DELETED = "ACCOUNT_DELETED"
     EMAIL_IN_USE = "EMAIL_IN_USE"
     OTP_NOT_REQUESTED = "OTP_NOT_REQUESTED"
     OTP_EXPIRED = "OTP_EXPIRED"
@@ -30,6 +31,22 @@ class ErrorCode:
     OTP_ATTEMPTS_EXCEEDED = "OTP_ATTEMPTS_EXCEEDED"
     OTP_SEND_FAILED = "OTP_SEND_FAILED"
     UNAUTHORIZED = "UNAUTHORIZED"
+    FORBIDDEN = "FORBIDDEN"
+    INVALID_STATUS_CHANGE = "INVALID_STATUS_CHANGE"
+    ADMIN_CREATE_DISABLED = "ADMIN_CREATE_DISABLED"
+    WRONG_SESSION_TYPE = "WRONG_SESSION_TYPE"
+    VIDEO_NOT_FOUND = "VIDEO_NOT_FOUND"
+    VIDEO_NOT_READY = "VIDEO_NOT_READY"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    UNSUPPORTED_MEDIA_TYPE = "UNSUPPORTED_MEDIA_TYPE"
+    INVALID_MEDIA_FILE = "INVALID_MEDIA_FILE"
+    UPLOAD_NOT_IN_PROGRESS = "UPLOAD_NOT_IN_PROGRESS"
+    UPLOAD_INVALID_CHUNK = "UPLOAD_INVALID_CHUNK"
+    UPLOAD_INCOMPLETE = "UPLOAD_INCOMPLETE"
+    INSUFFICIENT_STORAGE = "INSUFFICIENT_STORAGE"
+    MEDIA_LINK_INVALID = "MEDIA_LINK_INVALID"
+    DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
+    DOCUMENT_NOT_READY = "DOCUMENT_NOT_READY"
     INVALID_TOKEN = "INVALID_TOKEN"
     REFRESH_TOKEN_INVALID = "REFRESH_TOKEN_INVALID"
     REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED"
@@ -77,6 +94,23 @@ class AccountBlocked(DomainError):
     message = "This account is not available. Please contact support."
 
 
+class AccountDeleted(DomainError):
+    """The account was deleted by its owner. Kept distinct from
+    ACCOUNT_NOT_FOUND so support can tell "never existed" from "deleted"."""
+    code = ErrorCode.ACCOUNT_DELETED
+    message = (
+        "This account has been deleted. This mobile number cannot be registered "
+        "again — please contact support if you need it restored."
+    )
+
+
+class CannotDeleteAdmin(DomainError):
+    """Admin accounts are not deletable through the app's self-service flow —
+    losing the only admin would lock everyone out of the dashboard."""
+    code = ErrorCode.FORBIDDEN
+    message = "Admin accounts cannot be deleted from the app. Contact support."
+
+
 class EmailInUse(DomainError):
     code = ErrorCode.EMAIL_IN_USE
     message = "This email address is already linked to another account."
@@ -85,6 +119,95 @@ class EmailInUse(DomainError):
 class InvalidUserId(DomainError):
     code = ErrorCode.VALIDATION_ERROR
     message = "Invalid user id"
+
+
+class AdminOnly(DomainError):
+    """Signed in, but this mobile number is not in ADMIN_MOBILE_NUMBERS."""
+    code = ErrorCode.FORBIDDEN
+    message = "This account does not have admin access."
+
+
+class NotAnAdmin(DomainError):
+    """/admin/auth/signin for a number that is not an admin account."""
+    code = ErrorCode.FORBIDDEN
+    message = "This mobile number is not registered as an admin."
+
+
+class AdminCreateDisabled(DomainError):
+    """ADMIN_CREATE_ENABLED is false, so POST /admin/admins is switched off."""
+    code = ErrorCode.ADMIN_CREATE_DISABLED
+    message = "Creating admin accounts is disabled on this server."
+
+
+class InvalidStatusChange(DomainError):
+    """An admin status change that the lifecycle does not allow."""
+    code = ErrorCode.INVALID_STATUS_CHANGE
+    message = "This status change is not allowed."
+
+
+# ── Videos & media ──────────────────────────────────────────────────────────
+
+class VideoNotFound(DomainError):
+    code = ErrorCode.VIDEO_NOT_FOUND
+    message = "Video not found."
+
+
+class VideoNotReady(DomainError):
+    """Publishing (or playing) a video whose file hasn't finished uploading."""
+    code = ErrorCode.VIDEO_NOT_READY
+    message = "This video's file hasn't finished uploading yet."
+
+
+class FileTooLarge(DomainError):
+    code = ErrorCode.FILE_TOO_LARGE
+    message = "The file is too large."
+
+
+class UnsupportedMediaType(DomainError):
+    code = ErrorCode.UNSUPPORTED_MEDIA_TYPE
+    message = "This file type is not supported."
+
+
+class InvalidMediaFile(DomainError):
+    """The bytes don't look like the declared type (e.g. a renamed file)."""
+    code = ErrorCode.INVALID_MEDIA_FILE
+    message = "The file content doesn't match a supported format."
+
+
+class UploadNotInProgress(DomainError):
+    code = ErrorCode.UPLOAD_NOT_IN_PROGRESS
+    message = "There is no upload in progress for this video."
+
+
+class UploadInvalidChunk(DomainError):
+    code = ErrorCode.UPLOAD_INVALID_CHUNK
+    message = "Invalid upload chunk."
+
+
+class UploadIncomplete(DomainError):
+    code = ErrorCode.UPLOAD_INCOMPLETE
+    message = "Some chunks are still missing."
+
+
+class InsufficientStorage(DomainError):
+    code = ErrorCode.INSUFFICIENT_STORAGE
+    message = "Not enough storage space on the server for this file."
+
+
+class DocumentNotFound(DomainError):
+    code = ErrorCode.DOCUMENT_NOT_FOUND
+    message = "This video has no document."
+
+
+class DocumentNotReady(DomainError):
+    """The document is still being converted, or conversion failed."""
+    code = ErrorCode.DOCUMENT_NOT_READY
+    message = "The document isn't ready to view yet."
+
+
+class MediaLinkInvalid(DomainError):
+    code = ErrorCode.MEDIA_LINK_INVALID
+    message = "This media link is invalid or has expired."
 
 
 # ── OTP ──────────────────────────────────────────────────────────────────────

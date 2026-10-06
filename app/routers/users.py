@@ -2,17 +2,46 @@
 routers/users.py — Profile endpoints (HTTP only; rules live in services/user_service.py).
 """
 
-from fastapi import APIRouter, Depends, status
+from typing import Literal, Optional
+
+from fastapi import APIRouter, Depends, Query, status
 
 from app.core.config import settings
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_admin
+from app.schemas.admin import AdminUserList
 from app.schemas.common import ERROR_RESPONSES, ApiResponse, ok
 from app.schemas.user import UserCreate, UserOut, UserUpdate
-from app.services import user_service
+from app.services import admin_service, user_service
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/users", tags=["users"], responses=ERROR_RESPONSES
 )
+
+
+@router.get(
+    "",
+    response_model=ApiResponse[AdminUserList],
+    dependencies=[Depends(require_admin)],
+    summary="List all users (admins excluded)",
+)
+async def list_users(
+    q: Optional[str] = Query(default=None, max_length=60, description="Part of a name, email or mobile number"),
+    status: Optional[Literal["pending", "active", "blocked"]] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=admin_service.MAX_PAGE_SIZE),
+):
+    """
+    All app users, newest first, paginated. **Admin accounts are never listed**:
+    the database query only matches documents whose `role` is not `"admin"`
+    (old documents with no `role` count as users and are included).
+
+    Requires an admin access token (it returns every user's mobile and email).
+
+    - `q` — search part of a name, email or mobile number.
+    - `status` — only `pending`, `active` or `blocked` accounts.
+    - `page`, `page_size` — pagination (max 100 per page).
+    """
+    return ok(await admin_service.list_users(q, status, page, page_size), "Users fetched successfully")
 
 
 @router.get("/me", response_model=ApiResponse[UserOut])

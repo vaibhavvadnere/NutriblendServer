@@ -28,36 +28,66 @@ from app.core.config import settings
 
 ACCESS_TOKEN_TYPE = "access"
 
+# Session scopes. Every access token, refresh token and OTP carries one.
+#   app   — issued via /auth/signin or /auth/signup (the mobile app)
+#   admin — issued via /admin/auth/signin (the dashboard); admin accounts only
+# Tokens minted before scopes existed have no claim and count as "app".
+SCOPE_APP = "app"
+SCOPE_ADMIN = "admin"
+
+#: OTP purposes that are NOT sessions. An OTP sent for one of these can never
+#: be exchanged for a token at /auth/verify-otp, and a sign-in OTP can never be
+#: used to perform one of these actions. The purpose is stored with the OTP and
+#: read from storage, never from the request.
+PURPOSE_DELETE = "delete"
+SESSION_SCOPES = (SCOPE_APP, SCOPE_ADMIN)
+SCOPES = (SCOPE_APP, SCOPE_ADMIN)
+
 
 # ── Access tokens (JWT) ──────────────────────────────────────────────────────
 
-def create_access_token(subject: str) -> str:
-    """subject = the user's mobile_number, embedded as the 'sub' claim."""
+def _access_minutes(scope: str) -> int:
+    return settings.ADMIN_ACCESS_TOKEN_EXPIRE_MINUTES if scope == SCOPE_ADMIN else settings.ACCESS_TOKEN_EXPIRE_MINUTES
+
+
+def create_access_token(subject: str, scope: str = SCOPE_APP) -> str:
+    """subject = the user's mobile_number ('sub' claim); scope = 'app' | 'admin'."""
+    if scope not in SCOPES:
+        raise ValueError(f"unknown token scope: {scope!r}")
     now = datetime.now(timezone.utc)
     payload = {
         "sub": subject,
         "type": ACCESS_TOKEN_TYPE,
+        "scope": scope,
         "iat": now,
-        "exp": now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+        "exp": now + timedelta(minutes=_access_minutes(scope)),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> str | None:
-    """Return the 'sub' claim (mobile_number) if the token is a valid, unexpired
-    access token, else None."""
+def decode_access_claims(token: str) -> tuple[str, str] | None:
+    """(mobile_number, scope) if the token is a valid, unexpired access token, else None."""
     try:
         payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
     except JWTError:
         return None
     # Reject anything that isn't an access token (e.g. a token minted elsewhere).
-    if payload.get("type") != ACCESS_TOKEN_TYPE:
+    if payload.get("type") != ACCESS_TOKEN_TYPE or not payload.get("sub"):
         return None
-    return payload.get("sub")
+    scope = payload.get("scope", SCOPE_APP)
+    if scope not in SCOPES:
+        return None
+    return payload["sub"], scope
 
 
-def access_token_expires_in_seconds() -> int:
-    return settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
+def decode_access_token(token: str) -> str | None:
+    """Return the 'sub' claim (mobile_number) of a valid access token of any scope."""
+    claims = decode_access_claims(token)
+    return claims[0] if claims else None
+
+
+def access_token_expires_in_seconds(scope: str = SCOPE_APP) -> int:
+    return _access_minutes(scope) * 60
 
 
 # ── Refresh tokens (opaque, stored hashed) ───────────────────────────────────

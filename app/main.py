@@ -15,8 +15,10 @@ from app.core import database
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.providers.sms import current_provider_name
-from app.routers import auth, users
+from app.providers.storage import get_storage
+from app.routers import admin, admin_accounts, admin_auth, admin_videos, auth, legal, media, users, videos
 from app.schemas.common import ok
+from app.services import video_service
 from app.utils.network import lan_ip
 
 logging.basicConfig(
@@ -32,6 +34,9 @@ async def lifespan(app: FastAPI):
     # A bad MONGO_URI now fails here with a readable message instead of
     # surfacing as a mystery 500 on the first request.
     await database.connect()
+    storage = get_storage()
+    logger.info("Media storage: %s (%s)", storage.name, storage.health())
+    await video_service.cleanup_expired_uploads()
     logger.info("SMS provider: %s", current_provider_name())
     yield
     await database.close()
@@ -63,6 +68,13 @@ app.add_middleware(
 
 app.include_router(users.router)
 app.include_router(auth.router)
+app.include_router(admin.router)
+app.include_router(admin_accounts.router)
+app.include_router(admin_auth.router)
+app.include_router(admin_videos.router)
+app.include_router(videos.router)
+app.include_router(media.router)
+app.include_router(legal.router)
 
 
 @app.get("/api/health", tags=["health"])
@@ -90,6 +102,7 @@ async def health(request: Request):
         "env": settings.ENV,
         "database": db_status,
         "sms_provider": current_provider_name(),
+        "storage": f"{get_storage().name} ({get_storage().health()})",
         "base_url": base_url,
         "api_base_url": f"{base_url}{settings.API_PREFIX.strip('/')}/",
     }

@@ -1,0 +1,7 @@
+# Nutriblend admin dashboard — runtime dependencies.
+# Independent of the server's requirements.txt: this app talks to the server
+# over HTTP only and never imports server code.
+streamlit>=1.42,<2
+httpx>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2

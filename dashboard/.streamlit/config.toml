@@ -1,0 +1,21 @@
+[server]
+headless = true
+port = 8501
+# Only this computer can open the dashboard. Change to "0.0.0.0" only if you
+# deliberately want other devices on your network to reach it.
+address = "localhost"
+# MB. Raised for the video upload screen (step 5).
+maxUploadSize = 500
+runOnSave = false
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
+# Never show Python tracebacks in the browser.
+showErrorDetails = false
+
+[theme]
+base = "light"
+primaryColor = "#2E7D32"

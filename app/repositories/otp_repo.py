@@ -3,6 +3,9 @@ repositories/otp_repo.py — Data access for the `otps` collection.
 
 One document per mobile number; requesting a new OTP overwrites the old one.
 Only the OTP's hash is stored. The `expires_at` TTL index deletes stale records.
+
+`purpose` ("app" | "admin") records which sign-in asked for the OTP, and
+decides what kind of session verify-otp issues. Records without it are "app".
 """
 
 from datetime import datetime
@@ -13,7 +16,9 @@ from pymongo import ReturnDocument
 from app.core.database import otps_collection
 
 
-async def save(mobile_number: str, otp_hash: str, expires_at: datetime, created_at: datetime) -> None:
+async def save(
+    mobile_number: str, otp_hash: str, expires_at: datetime, created_at: datetime, purpose: str = "app"
+) -> None:
     """Store a fresh OTP for this number, replacing any previous one."""
     await otps_collection.update_one(
         {"mobile_number": mobile_number},
@@ -23,6 +28,7 @@ async def save(mobile_number: str, otp_hash: str, expires_at: datetime, created_
                 "expires_at": expires_at,
                 "attempts": 0,
                 "created_at": created_at,
+                "purpose": purpose,
             }
         },
         upsert=True,

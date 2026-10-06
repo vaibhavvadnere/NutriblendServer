@@ -21,12 +21,41 @@ All endpoints are versioned under `/api/v1`. `/api/health` is unversioned.
 | PATCH | `/api/v1/users/me` | Bearer | Update name / email |
 | GET | `/api/v1/users/{id}` | Bearer | Fetch a user by id |
 | POST | `/api/v1/users` | — | *Deprecated* — admin/seeding only |
+| POST | `/api/v1/admin/auth/signin` | — | Dashboard sign-in (admins only), then `/auth/verify-otp` |
+| POST | `/api/v1/admin/admins` | — | Create an admin (open in development; `ADMIN_CREATE_ENABLED`) |
+| GET | `/api/v1/users` | Admin | List app users (admins excluded) |
+| GET | `/api/v1/admin/stats` · `/admin/users/{id}` | Admin | Dashboard stats · one user |
+| PATCH | `/api/v1/admin/users/{id}/status` | Admin | Block / unblock |
+| POST | `/api/v1/admin/videos` | Admin | Start a video upload (details + file size) |
+| PUT | `/api/v1/admin/videos/{id}/upload/chunks/{n}` | Admin | Upload one chunk (raw bytes) |
+| GET · POST | `/api/v1/admin/videos/{id}/upload` · `/upload/complete` | Admin | Upload progress · finish |
+| GET · PATCH · DELETE | `/api/v1/admin/videos[/{id}]` | Admin | List / edit / delete videos |
+| PATCH | `/api/v1/admin/videos/{id}/status` | Admin | Draft / published |
+| PUT · DELETE | `/api/v1/admin/videos/{id}/thumbnail` | Admin | Cover image |
+| GET | `/api/v1/videos` · `/videos/{id}` · `/videos/categories` | Bearer | Published videos for the app, with expiring links |
+| GET | `/media/{key}?exp=&sig=` | Signed link | Video/image file (Range supported) |
+| PUT · DELETE | `/api/v1/admin/videos/{id}/document` | Admin | Attach (raw body + `X-File-Name`) / remove the video's PDF, Word or PowerPoint |
+| POST · GET | `/api/v1/admin/videos/{id}/document/retry` · `/document/pages` | Admin | Re-prepare · page image links |
+| GET | `/api/v1/videos/{id}/document` | Bearer | The document as page images (view-only; the original is never served) |
 
 Sign up and sign in both end at `verify-otp`, so the app needs one OTP screen.
 Every response uses one envelope, and HTTP status codes stay meaningful:
 
 - Success: `{"success": true, "message": "...", "data": {...}}`
 - Failure: `{"success": false, "message": "...", "error": {"code": "...", "details": {...}}}` — branch on `error.code`.
+
+## Privacy policy (Google Play)
+
+Public, no login: **`/privacy-policy`** (use this URL in Play Console and in the app)
+and **`/account-deletion`** (Play Console → Data safety → Data deletion). The text is
+`app/legal/privacy_policy.md`, filled from the `LEGAL_*` values in `.env`; the
+dashboard's **Privacy policy** page shows it with a Google Play readiness checklist.
+
+## Documents (view-only)
+
+Each video can have one PDF, Word or PowerPoint document. The original is never
+served; the app is shown page images. Word/PowerPoint need **LibreOffice** on the
+server (`brew install --cask libreoffice`); PDFs work without it.
 
 ## Quick start
 
@@ -40,3 +69,8 @@ Interactive docs: http://localhost:8000/docs
 
 See **PROJECT_SETUP.md** for the full guide — Atlas setup, SMS provider setup,
 every environment variable, and what's still on the to-do list.
+
+## Admin dashboard
+
+A separate Streamlit app lives in `dashboard/` (own venv and requirements; talks to
+this API over HTTP only). See **dashboard/README.md**.
