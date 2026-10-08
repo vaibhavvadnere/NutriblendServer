@@ -42,9 +42,9 @@ def _confirm_block(user: UserDetail) -> None:
         "and won't be able to sign in until you unblock them."
     )
     left, right = st.columns(2)
-    if left.button("Cancel", use_container_width=True):
+    if left.button("Cancel", width="stretch"):
         st.rerun()
-    if right.button("Block user", type="primary", icon=":material/block:", use_container_width=True):
+    if right.button("Block user", type="primary", icon=":material/block:", width="stretch"):
         _change_status(user, "blocked")
 
 

@@ -21,6 +21,10 @@ class StorageError(Exception):
     """A backend failure (disk full, permission denied, network, ...)."""
 
 
+class ChecksumMismatch(StorageError):
+    """The storage received bytes that don't match the MD5 sent with them."""
+
+
 class StorageProvider(ABC):
     #: Name used in STORAGE_PROVIDER.
     name: str = "base"
@@ -32,8 +36,39 @@ class StorageProvider(ABC):
         """Prepare to receive `size` bytes for `key`."""
 
     @abstractmethod
-    async def write_chunk(self, key: str, offset: int, data: bytes) -> None:
-        """Write `data` at byte `offset` of the in-progress upload. Idempotent."""
+    async def write_chunk(self, key: str, offset: int, data: bytes, content_md5: Optional[str] = None) -> None:
+        """Write `data` at byte `offset` of the in-progress upload. Idempotent.
+        `content_md5` (base64 MD5 of `data`) lets the storage verify what it
+        received; a mismatch raises ChecksumMismatch."""
+
+    async def part_checksums(self, key: str, chunk_size: int) -> Optional[dict[int, tuple[int, Optional[str]]]]:
+        """What the storage actually holds for an in-progress upload:
+        {chunk index: (size in bytes, md5 hex or None if unknown)}.
+        None = this storage can't tell (then nothing extra is checked)."""
+        return None
+
+    async def upload_sha256(self, key: str) -> Optional[str]:
+        """SHA-256 of the whole in-progress upload, if the storage can read it back."""
+        return None
+
+    async def presign_put(self, key: str, content_type: str, size: int, ttl_seconds: int) -> Optional[str]:
+        """A short-lived link a browser can PUT a whole file to (exactly `size`
+        bytes, this Content-Type). None = not supported: send it through the server."""
+        return None
+
+    async def object_size(self, key: str) -> Optional[int]:
+        """Size of a stored file in bytes, None if it doesn't exist."""
+        return None
+
+    async def read_head(self, key: str, length: int) -> bytes:
+        """The first `length` bytes of a stored file (format checks)."""
+        raise StorageError("read_head not supported")
+
+    async def presign_part(self, key: str, index: int, content_md5: str, ttl_seconds: int) -> Optional[str]:
+        """A short-lived link a browser can PUT chunk `index` to directly (it
+        must send exactly this `Content-MD5` header). None = not supported:
+        send the chunk through the server instead."""
+        return None
 
     @abstractmethod
     async def read_upload_head(self, key: str, length: int) -> bytes:
@@ -79,6 +114,16 @@ class StorageProvider(ABC):
     def local_path(self, key: str) -> Optional[Path]:
         """A filesystem path the API can serve directly, or None for cloud
         backends (which hand out their own signed URLs instead)."""
+        return None
+
+    async def download_to(self, key: str, dest: Path) -> None:
+        """Copy the object to a local file (cloud backends; used to convert and
+        render documents). Local storage never needs it: use local_path()."""
+        raise StorageError(f"{self.name} storage cannot download objects")
+
+    async def presigned_url(self, key: str, ttl_seconds: int) -> Optional[str]:
+        """A short-lived direct link to the object, or None when the backend
+        has none (local storage is served by the /media route itself)."""
         return None
 
     def free_bytes(self) -> Optional[int]:

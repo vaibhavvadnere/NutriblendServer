@@ -7,8 +7,10 @@ The signed link is the permission (players can't send auth headers); see
 core/media_links.py. Supports HTTP Range requests, which video players need to
 seek and to start playing before the whole file has downloaded.
 
-Cloud providers (R2/S3) will serve their own signed URLs instead; this route is
-only used by STORAGE_PROVIDER=local.
+With cloud storage (STORAGE_PROVIDER=r2) this route still checks the signed
+link, then answers 302 with a short-lived presigned R2 URL: the bytes go from R2
+straight to the player (Range requests included) and never through this server.
+Document page images are rendered into the bucket on first request.
 """
 
 import mimetypes
@@ -17,9 +19,10 @@ import re
 
 import anyio
 from fastapi import APIRouter, Query, Request, status
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 
 from app.core import media_links
+from app.core.config import settings
 from app.core.errors import APIError, ErrorCode
 from app.core.exceptions import MediaLinkInvalid
 from app.providers.storage import StorageError, get_storage
@@ -53,6 +56,20 @@ def _parse_range(header: str, size: int) -> tuple[int, int] | None:
     return start, min(end, size - 1)
 
 
+async def _redirect_to_cloud(key: str) -> Response:
+    try:
+        if key.startswith("pages/"):
+            found = await document_service.ensure_page(key)
+        else:
+            found = await get_storage().exists(key)
+        if not found:
+            raise _not_found()
+        url = await get_storage().presigned_url(key, settings.R2_PRESIGNED_TTL_SECONDS)
+    except StorageError:
+        raise _not_found()
+    return RedirectResponse(url, status_code=status.HTTP_302_FOUND, headers={"Cache-Control": "private, no-store"})
+
+
 @router.api_route("/{key:path}", methods=["GET", "HEAD"], include_in_schema=False)
 async def serve_media(request: Request, key: str, exp: int = Query(...), sig: str = Query(...)):
     if not media_links.verify(key, exp, sig):
@@ -62,6 +79,9 @@ async def serve_media(request: Request, key: str, exp: int = Query(...), sig: st
     # viewers get page images instead.
     if key.startswith("documents/"):
         raise _not_found()
+
+    if get_storage().name != "local":
+        return await _redirect_to_cloud(key)
     try:
         if key.startswith("pages/"):
             path = await document_service.page_image(key)

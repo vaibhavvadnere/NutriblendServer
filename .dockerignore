@@ -1,0 +1,18 @@
+# Never copy secrets, media, local tools or other apps into the image.
+.git
+.venv
+.env
+.env.*
+!.env.example
+media
+staging
+dashboard
+clients
+scripts
+tests
+**/__pycache__
+**/*.pyc
+.DS_Store
+*.md
+Dockerfile
+docker-compose.yml

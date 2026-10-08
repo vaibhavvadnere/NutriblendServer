@@ -5,6 +5,7 @@ Run with:
     uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -18,7 +19,7 @@ from app.providers.sms import current_provider_name
 from app.providers.storage import get_storage
 from app.routers import admin, admin_accounts, admin_auth, admin_videos, auth, legal, media, users, videos
 from app.schemas.common import ok
-from app.services import video_service
+from app.services import document_service, optimizer, rate_limiter, video_service
 from app.utils.network import lan_ip
 
 logging.basicConfig(
@@ -34,18 +35,40 @@ async def lifespan(app: FastAPI):
     # A bad MONGO_URI now fails here with a readable message instead of
     # surfacing as a mystery 500 on the first request.
     await database.connect()
+    await rate_limiter.reset_otp_limits_on_startup()
     storage = get_storage()
     logger.info("Media storage: %s (%s)", storage.name, storage.health())
+    if hasattr(storage, "check"):
+        logger.info("Media storage reachable: %s", await storage.check())
     await video_service.cleanup_expired_uploads()
+    await document_service.resume_unfinished()
     logger.info("SMS provider: %s", current_provider_name())
+    worker = None
+    if optimizer.active():
+        worker = asyncio.create_task(optimizer.worker_loop(), name="video-optimizer")
+    elif settings.VIDEO_OPTIMIZE_ENABLED:
+        logger.warning("Video optimization is on but ffmpeg/ffprobe are not installed: videos are stored as uploaded.")
     yield
+    if worker:
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
     await database.close()
 
+
+# Interactive API docs only outside production: in production they would
+# advertise every endpoint (including admin ones) to anyone.
+_docs = not settings.is_production
 
 app = FastAPI(
     title=settings.APP_NAME,
     version="1.0.0",
     lifespan=lifespan,
+    docs_url="/docs" if _docs else None,
+    redoc_url="/redoc" if _docs else None,
+    openapi_url="/openapi.json" if _docs else None,
     description=(
         "Mobile-number + OTP authentication for the Nutriblend app. "
         "All endpoints are versioned under `/api/v1`; `/api/health` is unversioned "
@@ -57,11 +80,12 @@ app = FastAPI(
 # see app/schemas/common.py and app/core/errors.py.
 register_error_handlers(app)
 
-# CORS: allow browsers on any origin to call this API during development.
-# Before production, replace "*" with your real frontend domain(s).
+# CORS: which browser origins may call the API (CORS_ORIGINS, default "*" for
+# development) plus the dashboard (DASHBOARD_ORIGINS — its upload box calls the
+# upload endpoints from the admin's browser).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=list(dict.fromkeys([*settings.CORS_ORIGINS, *settings.DASHBOARD_ORIGINS])),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -72,6 +96,8 @@ app.include_router(admin.router)
 app.include_router(admin_accounts.router)
 app.include_router(admin_auth.router)
 app.include_router(admin_videos.router)
+app.include_router(admin_videos.upload_router)
+app.include_router(admin_videos.document_router)
 app.include_router(videos.router)
 app.include_router(media.router)
 app.include_router(legal.router)

@@ -29,3 +29,9 @@ async def increment(key: str, scope: str, identifier: str, expires_at: datetime)
 
 async def delete_for(scope: str, identifier: str) -> None:
     await rate_limits_collection.delete_many({"scope": scope, "identifier": identifier})
+
+
+async def delete_scopes(*scopes: str) -> int:
+    """Remove every counter of the given scopes (all identifiers). Returns how many were removed."""
+    res = await rate_limits_collection.delete_many({"scope": {"$in": list(scopes)}})
+    return res.deleted_count

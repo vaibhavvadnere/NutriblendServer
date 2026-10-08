@@ -68,7 +68,9 @@ class LocalStorage(StorageProvider):
 
         await self._run(_create)
 
-    async def write_chunk(self, key: str, offset: int, data: bytes) -> None:
+    async def write_chunk(self, key: str, offset: int, data: bytes, content_md5: Optional[str] = None) -> None:
+        # Local disk: the service already verified `data` against its MD5, and
+        # part_checksums() re-reads what was written before completing.
         part = self._part(key)
 
         def _write() -> None:
@@ -81,6 +83,40 @@ class LocalStorage(StorageProvider):
                 os.close(fd)
 
         await self._run(_write)
+
+    async def part_checksums(self, key: str, chunk_size: int) -> Optional[dict[int, tuple[int, Optional[str]]]]:
+        """Re-read the in-progress file and hash each chunk-sized region."""
+        import hashlib
+
+        part = self._part(key)
+
+        def _hash() -> dict[int, tuple[int, Optional[str]]]:
+            out: dict[int, tuple[int, Optional[str]]] = {}
+            with open(part, "rb") as fh:
+                index = 0
+                while True:
+                    block = fh.read(chunk_size)
+                    if not block:
+                        break
+                    out[index] = (len(block), hashlib.md5(block).hexdigest())
+                    index += 1
+            return out
+
+        return await self._run(_hash)
+
+    async def upload_sha256(self, key: str) -> Optional[str]:
+        import hashlib
+
+        part = self._part(key)
+
+        def _hash() -> str:
+            h = hashlib.sha256()
+            with open(part, "rb") as fh:
+                for block in iter(lambda: fh.read(8 * 1024 * 1024), b""):
+                    h.update(block)
+            return h.hexdigest()
+
+        return await self._run(_hash)
 
     async def read_upload_head(self, key: str, length: int) -> bytes:
         part = self._part(key)
@@ -146,6 +182,23 @@ class LocalStorage(StorageProvider):
             raise StorageError(f"invalid prefix: {prefix!r}")
         folder = (self.root / prefix).resolve()
         await self._run(lambda: shutil.rmtree(folder, ignore_errors=True))
+
+    async def object_size(self, key: str) -> Optional[int]:
+        path = self._path(key)
+
+        def _size() -> Optional[int]:
+            return path.stat().st_size if path.is_file() else None
+
+        return await anyio.to_thread.run_sync(_size)
+
+    async def read_head(self, key: str, length: int) -> bytes:
+        path = self._path(key)
+
+        def _read() -> bytes:
+            with open(path, "rb") as fh:
+                return fh.read(length)
+
+        return await anyio.to_thread.run_sync(_read)
 
     def staging_dir(self) -> Path:
         return self.uploads

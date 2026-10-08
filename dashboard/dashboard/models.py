@@ -131,6 +131,28 @@ class DocumentPages(_Model):
     links_expire_at: Optional[datetime] = None
 
 
+class Optimization(_Model):
+    """How the server turns the uploaded file into a smaller one. The original never reaches cloud storage."""
+    state: str                       # queued | running | done | failed
+    progress: float = 0.0
+    source_size: Optional[int] = None
+    output_size: Optional[int] = None
+    saved_percent: Optional[int] = None
+    mode: Optional[str] = None       # compressed | converted | kept
+    reason: Optional[str] = None
+    error: Optional[str] = None
+
+
+class Replacement(_Model):
+    """A new file being uploaded to replace a video's file (the old file keeps playing meanwhile)."""
+    video_id: str            # the unfinished upload (an `uploading` video record)
+    file_name: Optional[str] = None
+    file_size: int
+    started_at: Optional[datetime] = None
+    #: Once uploaded the new file is optimized before it is swapped in: queued | running | failed.
+    optimization: Optional[str] = None
+
+
 class Video(_Model):
     id: str
     title: str
@@ -152,6 +174,51 @@ class Video(_Model):
     uploaded_at: Optional[datetime] = None
     upload: Optional[UploadProgress] = None
     admin_document: Optional[VideoDocument] = None
+    #: Files missing from storage ("video", "thumbnail", "document"); only
+    #: filled when one video is fetched.
+    missing_files: list[str] = []
+    #: SHA-256 of the whole file (set when the dashboard sent it) and whether
+    #: the server confirmed every byte it stored matches what was sent.
+    sha256: Optional[str] = None
+    integrity_verified: bool = False
+    #: Shown in the app right now. A published video whose document isn't ready is hidden until it is
+    #: (None = an older server that doesn't say: treated as visible when published).
+    visible_in_app: Optional[bool] = None
+    #: A draft that publishes itself as soon as its document is ready.
+    publish_when_ready: bool = False
+    #: Set while a new file is uploading to replace this video's file.
+    replacement: Optional[Replacement] = None
+    #: On the unfinished upload of a replacement: the id of the video it replaces.
+    replaces: Optional[str] = None
+    #: Present for videos that go through optimization (queued / running / done / failed).
+    optimization: Optional[Optimization] = None
+
+    @property
+    def optimizing(self) -> bool:
+        return self.optimization is not None and self.optimization.state in ("queued", "running")
+
+    @property
+    def optimization_failed(self) -> bool:
+        return self.optimization is not None and self.optimization.state == "failed"
+
+    @property
+    def hidden_in_app(self) -> bool:
+        return self.status == "published" and self.visible_in_app is False
+
+
+class BrokenVideo(_Model):
+    id: str
+    title: str
+    status: str
+    created_at: datetime
+    missing_files: list[str]
+
+
+class StorageCheck(_Model):
+    storage: str
+    checked: int
+    broken: list[BrokenVideo] = []
+    errors: int = 0
 
 
 class VideoPage(_Model):

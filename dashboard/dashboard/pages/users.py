@@ -79,7 +79,7 @@ def render() -> None:
     event = st.dataframe(
         df,
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         column_order=["Name", "Mobile", "Email", "State", "Status", "Joined", "Last sign-in"],
         height=(len(df) + 1) * 35 + 3,  # show the whole page, no inner scrolling
         on_select="rerun",
@@ -97,9 +97,9 @@ def render() -> None:
     last = first + len(result.items) - 1
     info, prev_col, next_col = st.columns([4, 1, 1], vertical_alignment="center")
     info.caption(f"Showing {first:,}–{last:,} of {result.total:,} users · page {result.page} of {result.pages}")
-    if prev_col.button("Previous", icon=":material/chevron_left:", disabled=result.page <= 1, use_container_width=True):
+    if prev_col.button("Previous", icon=":material/chevron_left:", disabled=result.page <= 1, width="stretch"):
         st.session_state[_PAGE] = result.page - 1
         st.rerun()
-    if next_col.button("Next", icon=":material/chevron_right:", disabled=result.page >= result.pages, use_container_width=True):
+    if next_col.button("Next", icon=":material/chevron_right:", disabled=result.page >= result.pages, width="stretch"):
         st.session_state[_PAGE] = result.page + 1
         st.rerun()

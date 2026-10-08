@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"></head>
+<body>
+<script>
+"use strict";
+// Streamlit component protocol (v1), no dependencies. Draws nothing.
+const NAME = "nutriblend.sid";
+let last = undefined, seq = 0;
+const send = (type, extra) => window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, extra), "*");
+window.addEventListener("message", (event) => {
+  if (!event.data || event.data.type !== "streamlit:render") return;
+  const args = event.data.args || {};
+  let stored = null;
+  try {
+    if (args.clear) sessionStorage.removeItem(NAME);
+    else if (args.store_key) sessionStorage.setItem(NAME, args.store_key);
+    stored = args.clear ? null : sessionStorage.getItem(NAME);
+  } catch (e) { stored = null; }               // storage blocked: behave as "nothing stored"
+  if (stored !== last) {                        // tell Python once per change (the first render always answers)
+    last = stored;
+    send("streamlit:setComponentValue", { value: { seq: Date.now() + ":" + (++seq), stored }, dataType: "json" });
+  }
+});
+send("streamlit:componentReady", { apiVersion: 1 });
+send("streamlit:setFrameHeight", { height: 0 });
+</script>
+</body>
+</html>

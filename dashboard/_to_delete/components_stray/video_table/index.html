@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --text:#31333f; --bg:#fff; --soft:#f0f2f6; --primary:#2e7d32; --line:#e6e9ef; --muted:#808495; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; color: var(--text); font: 14px/1.4 "Source Sans", "Source Sans Pro", system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--bg); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; }
+  th, td { text-align: left; padding: 8px 12px; white-space: nowrap; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 400; background: var(--soft); user-select: none; cursor: pointer; position: sticky; top: 0; }
+  th:hover { color: var(--text); }
+  th .arrow { display: inline-block; width: 1em; font-size: 10px; margin-left: 2px; }
+  td.right, th.right { text-align: right; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: color-mix(in srgb, var(--primary) 8%, var(--bg)); }
+  tbody tr:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+  tbody tr.clicked td { background: color-mix(in srgb, var(--primary) 18%, var(--bg)); }
+  td.title { font-weight: 600; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; background: #9e9e9e; }
+  .dot.published { background: #2e7d32; } .dot.uploading { background: #ef6c00; } .dot.optimizing { background: #1976d2; } .dot.problem { background: #c62828; }
+  .empty { padding: 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap" id="wrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
+<script>
+"use strict";
+// Streamlit component protocol (v1), no dependencies.
+const send = (type, extra) => window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, extra), "*");
+let seq = 0, state = { rows: [], columns: [], right: [] }, sortCol = null, sortDir = 1, clickedId = null;
+
+function cssTheme(theme) {
+  if (!theme) return;
+  const r = document.documentElement.style;
+  if (theme.textColor) r.setProperty("--text", theme.textColor);
+  if (theme.backgroundColor) r.setProperty("--bg", theme.backgroundColor);
+  if (theme.secondaryBackgroundColor) r.setProperty("--soft", theme.secondaryBackgroundColor);
+  if (theme.primaryColor) r.setProperty("--primary", theme.primaryColor);
+  if (theme.font) document.body.style.fontFamily = theme.font;
+}
+
+function sortValue(row, col) {
+  const s = row.sort && row.sort[col];
+  if (s !== undefined && s !== null) return s;
+  const v = row[col];
+  return typeof v === "string" ? v.toLowerCase() : v;
+}
+
+function open(row, tr) {
+  clickedId = row.id;
+  document.querySelectorAll("tbody tr.clicked").forEach((e) => e.classList.remove("clicked"));
+  if (tr) tr.classList.add("clicked");
+  send("streamlit:setComponentValue", { value: { seq: Date.now() + ":" + (++seq), id: row.id }, dataType: "json" });
+}
+
+function draw() {
+  const head = document.getElementById("head"), body = document.getElementById("body");
+  head.textContent = ""; body.textContent = "";
+  const trh = document.createElement("tr");
+  state.columns.forEach((c) => {
+    const th = document.createElement("th");
+    if (state.right.includes(c)) th.className = "right";
+    th.textContent = c;
+    const arrow = document.createElement("span"); arrow.className = "arrow";
+    arrow.textContent = sortCol === c ? (sortDir > 0 ? "▲" : "▼") : "";
+    th.appendChild(arrow);
+    th.addEventListener("click", () => {
+      if (sortCol === c) sortDir = -sortDir; else { sortCol = c; sortDir = 1; }
+      draw();
+    });
+    trh.appendChild(th);
+  });
+  head.appendChild(trh);
+
+  let rows = state.rows.slice();
+  if (sortCol) {
+    rows.sort((a, b) => {
+      const x = sortValue(a, sortCol), y = sortValue(b, sortCol);
+      return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
+    });
+  }
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.tabIndex = 0; tr.setAttribute("role", "link");
+    tr.setAttribute("aria-label", "Open " + (row.Title || "video"));
+    if (row.id === clickedId) tr.className = "clicked";
+    state.columns.forEach((c) => {
+      const td = document.createElement("td");
+      if (c === "Title") td.className = "title";
+      if (state.right.includes(c)) td.className += " right";
+      if (c === "Status") {
+        const dot = document.createElement("span"); dot.className = "dot " + (row.tone || "");
+        td.appendChild(dot);
+      }
+      td.appendChild(document.createTextNode(row[c] === null || row[c] === undefined ? "—" : String(row[c])));
+      if (c === "Title") td.title = String(row[c] || "");
+      tr.appendChild(td);
+    });
+    tr.addEventListener("click", () => open(row, tr));
+    tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(row, tr); } });
+    body.appendChild(tr);
+  });
+  report();
+}
+
+function report() {
+  send("streamlit:setFrameHeight", { height: Math.ceil(document.getElementById("wrap").getBoundingClientRect().height) + 4 });
+}
+
+window.addEventListener("message", (event) => {
+  if (!event.data || event.data.type !== "streamlit:render") return;
+  const a = event.data.args || {};
+  cssTheme(event.data.theme);
+  const changed = JSON.stringify(a.rows) !== JSON.stringify(state.rows);
+  state = { rows: a.rows || [], columns: a.columns || [], right: a.right || [] };
+  if (changed || !document.getElementById("body").children.length) draw(); else report();
+});
+new ResizeObserver(report).observe(document.getElementById("wrap"));
+send("streamlit:componentReady", { apiVersion: 1 });
+</script>
+</body>
+</html>

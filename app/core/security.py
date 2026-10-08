@@ -27,6 +27,7 @@ from jose import JWTError, jwt
 from app.core.config import settings
 
 ACCESS_TOKEN_TYPE = "access"
+UPLOAD_TICKET_TYPE = "upload"
 
 # Session scopes. Every access token, refresh token and OTP carries one.
 #   app   — issued via /auth/signin or /auth/signup (the mobile app)
@@ -88,6 +89,35 @@ def decode_access_token(token: str) -> str | None:
 
 def access_token_expires_in_seconds(scope: str = SCOPE_APP) -> int:
     return _access_minutes(scope) * 60
+
+
+# ── Upload tickets ───────────────────────────────────────────────────────────
+# A ticket lets the admin's browser keep uploading ONE video (send pieces, get
+# piece links, finish) for UPLOAD_TICKET_TTL_HOURS — longer than the dashboard
+# session lasts. It can't be used as an access token (different "type").
+
+UPLOAD_FOR_VIDEO = "video"         # the video file of one video
+UPLOAD_FOR_DOCUMENT = "document"   # the document attached to one video
+
+
+def create_upload_ticket(video_id: str, admin_id: str, purpose: str = UPLOAD_FOR_VIDEO) -> tuple[str, datetime]:
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(hours=settings.UPLOAD_TICKET_TTL_HOURS)
+    payload = {"type": UPLOAD_TICKET_TYPE, "vid": video_id, "for": purpose, "sub": admin_id, "iat": now, "exp": exp}
+    return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM), exp
+
+
+def decode_upload_ticket(token: str, purpose: str = UPLOAD_FOR_VIDEO) -> str | None:
+    """The video id a valid, unexpired upload ticket for `purpose` is for, else None."""
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("type") != UPLOAD_TICKET_TYPE or not payload.get("vid"):
+        return None
+    if payload.get("for", UPLOAD_FOR_VIDEO) != purpose:
+        return None
+    return str(payload["vid"])
 
 
 # ── Refresh tokens (opaque, stored hashed) ───────────────────────────────────

@@ -1,0 +1,39 @@
+# Runs the API in Docker.
+#   Server (EC2): the production settings live in .env next to this file
+#                 (never committed; rsync deploys exclude it).
+#   Mac (test):   uses your normal .env.
+#
+#   docker compose up -d --build     build + start (also after code changes)
+#   docker compose logs -f --tail 200
+#   docker compose ps                 STATUS shows (healthy) when the API answers
+services:
+  api:
+    build: .
+    image: nutriblend-api:latest
+    env_file: .env
+    environment:
+      # Inside the container MongoDB/R2 are reached over the internet as usual;
+      # only the media folder path differs from a Mac run (unused with R2).
+      MEDIA_ROOT: /tmp/media
+      # Videos wait here while the server converts them; only the converted file goes to R2.
+      VIDEO_STAGING_ROOT: /staging
+    ports:
+      - "127.0.0.1:8000:8000"   # only reachable from this machine (Cloudflare Tunnel)
+    volumes:
+      - staging:/staging
+    restart: unless-stopped
+    mem_limit: 1700m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  staging:

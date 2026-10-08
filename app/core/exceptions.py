@@ -37,6 +37,7 @@ class ErrorCode:
     WRONG_SESSION_TYPE = "WRONG_SESSION_TYPE"
     VIDEO_NOT_FOUND = "VIDEO_NOT_FOUND"
     VIDEO_NOT_READY = "VIDEO_NOT_READY"
+    DOCUMENT_NOT_READY = "DOCUMENT_NOT_READY"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
     UNSUPPORTED_MEDIA_TYPE = "UNSUPPORTED_MEDIA_TYPE"
     INVALID_MEDIA_FILE = "INVALID_MEDIA_FILE"
@@ -47,6 +48,10 @@ class ErrorCode:
     MEDIA_LINK_INVALID = "MEDIA_LINK_INVALID"
     DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
     DOCUMENT_NOT_READY = "DOCUMENT_NOT_READY"
+    DUPLICATE_VIDEO = "DUPLICATE_VIDEO"
+    DUPLICATE_TITLE = "DUPLICATE_TITLE"
+    VIDEO_OPTIMIZING = "VIDEO_OPTIMIZING"
+    UPLOAD_CHECKSUM_MISMATCH = "UPLOAD_CHECKSUM_MISMATCH"
     INVALID_TOKEN = "INVALID_TOKEN"
     REFRESH_TOKEN_INVALID = "REFRESH_TOKEN_INVALID"
     REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED"
@@ -158,6 +163,12 @@ class VideoNotReady(DomainError):
     message = "This video's file hasn't finished uploading yet."
 
 
+class DocumentNotReady(DomainError):
+    """Publishing a video whose document is still being prepared (or failed to be)."""
+    code = ErrorCode.DOCUMENT_NOT_READY
+    message = "This video's document isn't ready yet."
+
+
 class FileTooLarge(DomainError):
     code = ErrorCode.FILE_TOO_LARGE
     message = "The file is too large."
@@ -192,6 +203,30 @@ class UploadIncomplete(DomainError):
 class InsufficientStorage(DomainError):
     code = ErrorCode.INSUFFICIENT_STORAGE
     message = "Not enough storage space on the server for this file."
+
+
+class DuplicateVideo(DomainError):
+    """The same file (same SHA-256) is already a video. `details` names it."""
+    code = ErrorCode.DUPLICATE_VIDEO
+    message = "This exact video file has already been uploaded."
+
+
+class VideoOptimizing(DomainError):
+    """The video is still being optimized (or its optimization failed), so it can't be published yet."""
+    code = ErrorCode.VIDEO_OPTIMIZING
+    message = "This video is still being optimized."
+
+
+class DuplicateTitle(DomainError):
+    """Another video already has this title. `details.videos` names them."""
+    code = ErrorCode.DUPLICATE_TITLE
+    message = "A video with this title already exists."
+
+
+class UploadChecksumMismatch(DomainError):
+    """Bytes don't match the fingerprint the client sent: corrupted on the way."""
+    code = ErrorCode.UPLOAD_CHECKSUM_MISMATCH
+    message = "The data was corrupted on the way. Please send it again."
 
 
 class DocumentNotFound(DomainError):

@@ -42,6 +42,9 @@ class SessionTokenStore:
         st.session_state[_EXPIRES_AT] = time.time() + expires_in
 
     def clear(self) -> None:
+        from dashboard.auth import remember
+
+        remember.forget()          # a signed-out session must not be restorable after a refresh
         for key in (_ACCESS, _REFRESH, _EXPIRES_AT, _USER):
             st.session_state.pop(key, None)
 

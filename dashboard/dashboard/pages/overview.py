@@ -64,7 +64,7 @@ def render() -> None:
     if df["count"].sum() == 0:
         st.info(f"No signups in the last {days} days.", icon=":material/insights:")
     else:
-        st.altair_chart(daily_counts_bar(df, "Signups"), use_container_width=True)
+        st.altair_chart(daily_counts_bar(df, "Signups"), width="stretch")
         busiest = df.loc[df["count"].idxmax()]
         st.caption(
             f"{int(df['count'].sum()):,} signups in {days} days · busiest day "
@@ -75,7 +75,7 @@ def render() -> None:
         st.dataframe(
             table.rename(columns={"date": "Date", "count": "Signups"}),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 
     # ── Server ────────────────────────────────────────────────────────────────

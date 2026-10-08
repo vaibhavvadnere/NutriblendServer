@@ -20,6 +20,13 @@ USER = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _no_remember(monkeypatch):
+    """These tests are about the form itself; the 'stay signed in' wait has its own tests."""
+    from dashboard.config import settings
+    monkeypatch.setattr(settings, "SESSION_REMEMBER_HOURS", 0)
+
+
 def _ok(data):
     return httpx.Response(200, json={"success": True, "message": "ok", "data": data})
 

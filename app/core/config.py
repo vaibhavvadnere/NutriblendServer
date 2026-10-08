@@ -64,8 +64,8 @@ class Settings(BaseSettings):
 
     # ── Media (videos & thumbnails) ──────────────────────────────────────────
     # Where file bytes live. "local" = a folder on this server (development).
-    # Cloud providers (Cloudflare R2 / AWS S3) plug in behind the same interface.
-    STORAGE_PROVIDER: Literal["local"] = "local"
+    # "r2"    = Cloudflare R2 (production). Needs the R2_* settings below.
+    STORAGE_PROVIDER: Literal["local", "r2"] = "local"
     # Folder for the local provider (created if missing). Keep it out of git.
     MEDIA_ROOT: str = "media"
     # Largest video accepted, in MB.
@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     UPLOAD_CHUNK_SIZE_MB: int = 8
     # An upload that isn't finished within this time is discarded.
     UPLOAD_SESSION_TTL_HOURS: int = 24
+    # Browser uploads: the dashboard sends pieces straight to the storage (R2)
+    # with short-lived signed links, so video bytes never pass through this
+    # server. Piece 0 always comes through the server (it checks the file is an
+    # MP4). Has no effect with STORAGE_PROVIDER=local (always via the server).
+    UPLOAD_DIRECT_TO_STORAGE: bool = True
+    UPLOAD_PART_URL_TTL_SECONDS: int = 900
+    # An upload ticket lets the admin's browser keep uploading ONE video for
+    # this long, independent of the (short) dashboard session.
+    UPLOAD_TICKET_TTL_HOURS: int = 12
     # Largest thumbnail image accepted, in MB.
     MAX_THUMBNAIL_SIZE_MB: int = 5
     # Documents attached to videos (PDF / Word / PowerPoint). 0 = no size limit.
@@ -86,6 +95,56 @@ class Settings(BaseSettings):
     # (`soffice` on PATH, or /Applications/LibreOffice.app on macOS).
     LIBREOFFICE_PATH: str = ""
     DOCUMENT_CONVERT_TIMEOUT_SECONDS: int = 300
+
+    # ── Video optimization ───────────────────────────────────────────────────
+    # Uploaded videos are first received on THIS server's disk (the staging
+    # folder), re-encoded to a much smaller H.264 file with ffmpeg in the
+    # background, and only that file is stored in the media storage (R2). The
+    # original never reaches R2. Needs ffmpeg + ffprobe; without them (or with
+    # this off) videos are uploaded straight to the storage as before.
+    VIDEO_OPTIMIZE_ENABLED: bool = True
+    # Where originals wait for optimization. Needs room for the largest video
+    # plus the encoded copy; keep it on a disk with plenty of free space.
+    VIDEO_STAGING_ROOT: str = "staging"
+    # x264 quality (lower = better and bigger). 21 is visually the same as the
+    # original for screen/explainer videos and typical camera footage.
+    VIDEO_OPTIMIZE_CRF: int = 21
+    # x264 speed/size trade-off (ultrafast … veryslow). "fast" suits a small server.
+    VIDEO_OPTIMIZE_PRESET: str = "fast"
+    VIDEO_OPTIMIZE_AUDIO_KBPS: int = 128
+    # Encoder threads; keep low so the API stays responsive.
+    VIDEO_OPTIMIZE_THREADS: int = 2
+    # H.264 videos at or below this video bitrate are already efficient: they
+    # are stored as they are (re-encoding would only lose quality).
+    VIDEO_OPTIMIZE_SKIP_BELOW_KBPS: int = 4000
+    # The encoded file must be at least this much smaller than the original,
+    # otherwise the original is kept (only for files that were already H.264).
+    VIDEO_OPTIMIZE_MIN_SAVING_PERCENT: int = 10
+    # How many videos are encoded at the same time.
+    VIDEO_OPTIMIZE_CONCURRENCY: int = 1
+    # An encode may take at most (this × the video's length + 10 minutes).
+    VIDEO_OPTIMIZE_TIMEOUT_FACTOR: int = 20
+    # Seconds between looks at the queue when it is empty.
+    VIDEO_OPTIMIZE_POLL_SECONDS: int = 5
+    # Free space to keep on the staging disk on top of what is needed (MB).
+    VIDEO_STAGING_MARGIN_MB: int = 500
+
+    # ── Cloudflare R2 (STORAGE_PROVIDER=r2) ──────────────────────────────────
+    # Account ID is in the R2 dashboard; the key pair comes from an R2 API token
+    # with "Object Read & Write" on this bucket only. Keep the keys in .env.
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET: str = ""
+    # Optional override (e.g. a jurisdiction endpoint, or a local test server).
+    # Empty = https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com
+    R2_ENDPOINT_URL: str = ""
+    # Lifetime of the direct R2 link a /media request is redirected to. Players
+    # reopen /media (whose own link lasts MEDIA_URL_TTL_SECONDS) when it expires.
+    R2_PRESIGNED_TTL_SECONDS: int = 600
+    # Local cache for PDFs downloaded from R2 to render document pages.
+    MEDIA_CACHE_DIR: str = ""  # empty = <system temp>/nutriblend-cache
+    MEDIA_CACHE_MAX_MB: int = 1024
 
     # Playback / thumbnail links handed to clients expire after this long.
     MEDIA_URL_TTL_SECONDS: int = 3600
@@ -123,6 +182,15 @@ class Settings(BaseSettings):
     # behind a proxy you control — otherwise callers can spoof their own IP and
     # walk straight around the per-IP limits.
     TRUST_PROXY_HEADERS: bool = False
+
+    # ── HTTP ─────────────────────────────────────────────────────────────────
+    # Browser origins allowed to call the API (JSON list). The Android app is
+    # not a browser. DASHBOARD_ORIGINS are always added: the dashboard's upload
+    # box runs in the admin's browser and calls the upload endpoints directly.
+    CORS_ORIGINS: list[str] = ["*"]
+    # Where the dashboard is opened from, e.g. ["https://admin.nutriblend.co.in"].
+    # Also used by scripts/r2_cors.py to allow browser uploads into the bucket.
+    DASHBOARD_ORIGINS: list[str] = ["http://localhost:8501", "http://127.0.0.1:8501"]
 
     # ── SMS delivery ─────────────────────────────────────────────────────────
     # Which provider actually sends the OTP. "mock" just logs it (dev default).

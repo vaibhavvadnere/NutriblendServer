@@ -134,3 +134,15 @@ async def reset_for(scope: str, identifier: str) -> None:
     """Clear a counter early — used after a successful login so a legitimate
     user isn't held to the cooldown from their own sign-in attempt."""
     await rate_limit_repo.delete_for(scope, identifier)
+
+
+OTP_SCOPES = ("otp_cooldown", "otp_mobile_hour", "otp_mobile_day", "otp_ip_hour", "verify_ip_hour")
+
+
+async def reset_otp_limits_on_startup() -> None:
+    """Development only: forget the OTP request limits whenever the server starts, so a restart
+    never leaves you waiting for a cooldown. Production keeps its limits across restarts."""
+    if settings.is_production:
+        return
+    removed = await rate_limit_repo.delete_scopes(*OTP_SCOPES)
+    logger.info("Development: OTP request limits reset on startup (%d counter(s) cleared).", removed)

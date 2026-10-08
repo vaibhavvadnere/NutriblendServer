@@ -1,0 +1,92 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  Browser uploads (Streamlit component, no build step). One page, two modes:
+
+  mode "box"      On a page: pick / drop a file, fingerprint it (SHA-256, in a
+                  worker), then hand the File to the manager when Python gives
+                  this box a task. Shows the task's progress while it's on screen.
+  mode "manager"  In the sidebar, on every page: does the uploading — video
+                  pieces straight to R2, N at a time; documents in one PUT —
+                  so an upload keeps going when the admin switches pages.
+                  Shows each upload with Stop / Retry / Dismiss.
+
+  Box and manager talk over a BroadcastChannel (same origin; a File object can
+  be passed). Events go back to Python as the component value: {seq, event, ...}.
+-->
+<style>
+  :root { --primary: #2E7D32; --text: #31333F; --muted: #6b6f7b; --bg: #ffffff; --soft: #f0f2f6; --border: #d5d8de; --red: #c62828; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: transparent; color: var(--text);
+               font-family: "Source Sans Pro", "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
+  .label { font-size: 14px; margin: 0 0 6px; }
+  .drop { border: 1px dashed var(--border); border-radius: 8px; background: var(--soft); padding: 18px 16px;
+          display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .drop.over { border-color: var(--primary); background: #e8f5e9; }
+  .drop .hint b { display: block; font-weight: 600; }
+  .drop .hint span { color: var(--muted); font-size: 13px; }
+  button { font: inherit; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+           padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--primary); color: var(--primary); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.small { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
+  .card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background: var(--bg); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .name { font-weight: 600; word-break: break-all; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .bar { height: 8px; border-radius: 4px; background: var(--soft); overflow: hidden; margin: 10px 0 6px; }
+  .bar > div { height: 100%; width: 0; background: var(--primary); transition: width .2s; }
+  .ok { color: var(--primary); }
+  .err { color: var(--red); margin-top: 8px; }
+  .note { margin-top: 8px; padding: 6px 10px; border-radius: 6px; font-size: 13px; background: #fff8e1; border: 1px solid #f0d58c; color: #5d4a00; }
+  .note.error { background: #fdecea; border-color: #f1a9a4; color: #7a1c14; }
+  .note.info { background: var(--soft); border-color: var(--border); color: var(--muted); }
+  .cover { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .cover img { height: 64px; border-radius: 6px; border: 1px solid var(--border); }
+  .hidden { display: none !important; }
+  input[type=file] { display: none; }
+  /* sidebar manager */
+  #manager h4 { margin: 0 0 6px; font-size: 14px; }
+  .task { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; background: var(--bg); }
+  .task .name { font-size: 13px; }
+  .task .bar { height: 6px; margin: 6px 0 4px; }
+  .task .muted { font-size: 12px; }
+  .task .err { font-size: 12px; margin-top: 4px; }
+  .task .actions { display: flex; gap: 6px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="box" class="hidden">
+    <p class="label" id="label">Video file</p>
+    <div class="drop" id="drop">
+      <div class="hint"><b>Drag and drop the file here</b><span id="limits"></span></div>
+      <button id="browse" type="button">Browse files</button>
+    </div>
+    <div class="card hidden" id="card">
+      <div class="row">
+        <div><div class="name" id="fname"></div><div class="muted" id="fsize"></div></div>
+        <div class="row">
+          <button id="change" type="button">Change file</button>
+          <button id="stop" type="button" class="hidden">Stop</button>
+        </div>
+      </div>
+      <div class="bar" id="barwrap"><div id="bar"></div></div>
+      <div class="muted" id="status"></div>
+      <div class="muted hidden" id="probe"></div>
+      <div class="cover hidden" id="cover"><img id="coverimg" alt="Cover picture"><span class="muted">Cover picture, taken from the video — used unless you choose a thumbnail below.</span></div>
+      <div id="notes"></div>
+    </div>
+    <div class="err hidden" id="error"></div>
+    <input type="file" id="picker">
+  </div>
+  <div id="manager" class="hidden"><h4>Uploads</h4><div id="tasks"></div></div>
+</div>
+<script src="hashes.js"></script>
+<script src="probe.js"></script>
+<script src="frame.js"></script>
+<script src="upload.js"></script>
+</body>
+</html>

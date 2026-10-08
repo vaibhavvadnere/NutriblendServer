@@ -38,7 +38,7 @@ def sidebar_account() -> None:
         return
     with st.sidebar:
         st.markdown(f"**{user.name}**  \n{mask_mobile(user.mobile_number)}")
-        if st.button("Log out", icon=":material/logout:", use_container_width=True):
+        if st.button("Log out", icon=":material/logout:", width="stretch"):
             auth_api.logout(session.get_client())
             session.clear()
             st.rerun()

@@ -44,6 +44,8 @@ otps_collection = db["otps"]
 refresh_tokens_collection = db["refresh_tokens"]
 rate_limits_collection = db["rate_limits"]
 videos_collection = db["videos"]
+# Multipart uploads in progress (R2 storage only): upload id + first bytes.
+storage_uploads_collection = db["storage_uploads"]
 
 
 def describe_connection() -> str:
@@ -100,8 +102,15 @@ async def init_indexes() -> None:
     await videos_collection.create_index([("status", 1), ("sort_order", 1), ("published_at", -1)])
     await videos_collection.create_index([("category", 1), ("status", 1)])
     await videos_collection.create_index("created_at")
+    # Duplicate detection: same file = same SHA-256.
+    await videos_collection.create_index("file.sha256", sparse=True)
     # Abandoned uploads are found (and cleaned up, files included) by this.
     await videos_collection.create_index("upload.expires_at")
+
+    # R2 upload bookkeeping cleans itself up too.
+    await storage_uploads_collection.create_index("expires_at", expireAfterSeconds=0)
+    # Documents left half-prepared by a restart are found by this.
+    await videos_collection.create_index("document.status", sparse=True)
 
     # Rate-limit counters expire themselves, so the collection stays small
     # without any cleanup job.

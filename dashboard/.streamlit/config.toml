@@ -4,8 +4,9 @@ port = 8501
 # Only this computer can open the dashboard. Change to "0.0.0.0" only if you
 # deliberately want other devices on your network to reach it.
 address = "localhost"
-# MB. Raised for the video upload screen (step 5).
-maxUploadSize = 500
+# MB. Only thumbnails (≤5 MB) go through Streamlit now — videos and documents
+# go from the browser straight to storage (components/browser_upload).
+maxUploadSize = 10
 runOnSave = false
 
 [browser]

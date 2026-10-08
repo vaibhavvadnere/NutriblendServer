@@ -59,7 +59,7 @@ _COOLDOWN = "login.cooldown"   # (mobile, retry_after_seconds) after "please wai
 def _mobile_step() -> None:
     with st.form("login-mobile", border=False):
         mobile = st.text_input("Mobile number", placeholder="10-digit mobile number", max_chars=15, key="login.mobile_input")
-        submitted = st.form_submit_button("Send OTP", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Send OTP", type="primary", width="stretch")
 
     if submitted:
         st.session_state.pop(_COOLDOWN, None)
@@ -93,7 +93,7 @@ def _mobile_step() -> None:
             "(Development: it is printed in the server terminal as [DEV OTP].)",
             icon=":material/hourglass_top:",
         )
-        if st.button("Enter the OTP I already have", type="primary", use_container_width=True):
+        if st.button("Enter the OTP I already have", type="primary", width="stretch"):
             st.session_state.pop(_COOLDOWN, None)
             _otp_sent(
                 OtpSent(mobile_number=mask_mobile(mobile), expires_in_minutes=5, resend_available_in_seconds=wait),
@@ -115,7 +115,7 @@ def _otp_step() -> None:
 
     with st.form("login-otp", border=False):
         otp = st.text_input("OTP", max_chars=10, placeholder="Enter the code")
-        submitted = st.form_submit_button("Verify & sign in", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Verify & sign in", type="primary", width="stretch")
 
     if submitted:
         otp = otp.strip()
@@ -144,12 +144,12 @@ def _otp_step() -> None:
     wait = int(sent.resend_available_in_seconds - (time.time() - st.session_state[_SENT_AT]))
     left, right = st.columns(2)
     with left:
-        if st.button("Change number", use_container_width=True):
+        if st.button("Change number", width="stretch"):
             _reset()
             st.rerun()
     with right:
         label = "Resend OTP" if wait <= 0 else f"Resend in {wait}s"
-        if st.button(label, disabled=wait > 0, use_container_width=True):
+        if st.button(label, disabled=wait > 0, width="stretch"):
             try:
                 sent = auth_api.resend_otp(session.get_client(), mobile)
             except ApiError as exc:
