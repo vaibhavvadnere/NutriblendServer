@@ -22,6 +22,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY app ./app
+# Host files may be owner-only (e.g. 600); make code readable by appuser.
+RUN chmod -R a+rX /srv/app
 
 # Run as an unprivileged user.
 RUN useradd --create-home --uid 10001 appuser
