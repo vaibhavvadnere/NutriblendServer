@@ -218,6 +218,11 @@ the optimization tests run real ffmpeg.
 `Dockerfile` + `docker-compose.yml` run the API with LibreOffice and ffmpeg/ffprobe
 included (staging lives in the `staging` volume): `docker compose up -d --build` (reads `.env`; listens on 127.0.0.1:8000).
 
+The same compose file also runs the **admin dashboard** (`dashboard/Dockerfile`, reads `dashboard/.env`,
+listens on 127.0.0.1:8501). Inside Docker the dashboard calls the API at `http://api:8000`; the browser
+uses `PUBLIC_BASE_URL` from `.env` (empty = `http://localhost:8000`; on the server `https://api.nutriblend.co.in`).
+Run either Docker or the plain `uvicorn`/`streamlit` commands, not both — they use the same ports.
+
 See **PROJECT_SETUP.md** for the full guide — Atlas setup, SMS provider setup,
 every environment variable, and what's still on the to-do list.
 

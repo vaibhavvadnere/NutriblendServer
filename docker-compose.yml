@@ -1,7 +1,8 @@
-# Runs the API in Docker.
-#   Server (EC2): the production settings live in .env next to this file
-#                 (never committed; rsync deploys exclude it).
-#   Mac (test):   uses your normal .env.
+# Runs the API and the admin dashboard in Docker.
+#   Server (EC2): the production settings live in .env (API) and dashboard/.env
+#                 next to this file (never committed; rsync deploys exclude them).
+#                 Set PUBLIC_BASE_URL=https://api.nutriblend.co.in in .env.
+#   Mac (test):   uses your normal .env files; links default to http://localhost:8000.
 #
 #   docker compose up -d --build     build + start (also after code changes)
 #   docker compose logs -f --tail 200
@@ -17,12 +18,16 @@ services:
       MEDIA_ROOT: /tmp/media
       # Videos wait here while the server converts them; only the converted file goes to R2.
       VIDEO_STAGING_ROOT: /staging
+      # Address the BROWSER/app uses for media links. Must be set because the
+      # dashboard calls the API by its internal name (http://api:8000).
+      # Taken from .env; empty there = http://localhost:8000 (Mac test).
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:8000:8000"   # only reachable from this machine (Cloudflare Tunnel)
     volumes:
       - staging:/staging
     restart: unless-stopped
-    mem_limit: 1700m
+    mem_limit: 1500m
     logging:
       driver: json-file
       options:
@@ -30,6 +35,34 @@ services:
         max-file: "5"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  dashboard:
+    build: ./dashboard
+    image: nutriblend-dashboard:latest
+    env_file: dashboard/.env
+    environment:
+      # The dashboard (Python) reaches the API inside Docker by its service name…
+      SERVER_URL: http://api:8000
+      # …but the admin's browser (upload box, videos, pictures) uses the public address.
+      PUBLIC_SERVER_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    ports:
+      - "127.0.0.1:8501:8501"   # only reachable from this machine (Cloudflare Tunnel)
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    mem_limit: 400m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5)"]
       interval: 60s
       timeout: 10s
       retries: 3
