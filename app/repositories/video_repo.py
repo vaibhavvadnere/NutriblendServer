@@ -48,6 +48,15 @@ async def update(video_id: ObjectId, set_fields: dict, unset_fields: Optional[li
     )
 
 
+async def set_thumbnail_if_missing(video_id: ObjectId, thumbnail: dict) -> bool:
+    """Set the thumbnail only if the video still has none (atomic), so an automatic picture never replaces one
+    the admin chose in the meantime. True if it was set."""
+    result = await videos_collection.update_one(
+        {"_id": video_id, "thumbnail": {"$exists": False}}, {"$set": {"thumbnail": thumbnail}}
+    )
+    return result.modified_count == 1
+
+
 async def mark_chunk_received(video_id: ObjectId, index: int, md5_hex: Optional[str] = None) -> Optional[dict]:
     """Record one chunk (and its MD5), only while the upload is still receiving."""
     update: dict[str, Any] = {"$addToSet": {"upload.received": index}}

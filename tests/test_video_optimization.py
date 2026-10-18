@@ -395,3 +395,61 @@ async def test_status_endpoint_data(optimizing):
 
     s = video_service.optimization_status()
     assert s.enabled and s.available and s.active and s.crf == 21 and s.preset == "veryfast"
+
+
+async def test_optimizer_adds_a_thumbnail_when_the_video_has_none(optimizing, storage, mongo, clips):
+    """No thumbnail is chosen by the admin: the optimizer grabs one itself from the finished video."""
+    from app.services import optimizer
+
+    v = await _upload(clips["big"])
+    assert await optimizer.run_once() is True
+
+    row = await _row(mongo, v.id)
+    thumb = row["thumbnail"]
+    assert thumb["content_type"] == "image/jpeg" and thumb["size"] > 0
+    assert thumb["key"].startswith(f"thumbnails/{v.id}/")
+    data = await _download(storage, thumb["key"])
+    assert len(data) == thumb["size"] and data[:3] == b"\xff\xd8\xff"          # a real JPEG
+    out = await video_service_module().get_admin(v.id, "http://t")
+    assert out.thumbnail_url and "thumbnails/" in out.thumbnail_url
+
+
+async def test_optimizer_keeps_an_existing_thumbnail(optimizing, storage, mongo, clips):
+    """An admin-chosen thumbnail is never replaced by the automatic one."""
+    from app.services import optimizer, video_service
+
+    v = await _upload(clips["big"])
+    chosen = b"\xff\xd8\xff" + os.urandom(200)                   # looks enough like a JPEG for the sniffer
+    await video_service.set_thumbnail(v.id, chosen, "http://t")
+    assert await optimizer.run_once() is True
+
+    row = await _row(mongo, v.id)
+    stored = await _download(storage, row["thumbnail"]["key"])
+    assert stored == chosen                                      # untouched by the optimizer
+
+
+async def test_optimizer_does_not_overwrite_a_cover_saved_during_the_job(optimizing, storage, mongo, clips, monkeypatch):
+    """The dashboard saves its cover right after the upload, often while the job is already running: it must win."""
+    from app.services import optimizer, video_service
+
+    v = await _upload(clips["big"])
+    chosen = b"\xff\xd8\xff" + os.urandom(200)
+    real_grab = optimizer.grab_frame
+
+    async def grab_then_admin_saves_cover(src, duration):
+        frame = await real_grab(src, duration)
+        await video_service.set_thumbnail(v.id, chosen, "http://t")   # arrives mid-job
+        return frame
+
+    monkeypatch.setattr(optimizer, "grab_frame", grab_then_admin_saves_cover)
+    assert await optimizer.run_once() is True
+
+    row = await _row(mongo, v.id)
+    assert await _download(storage, row["thumbnail"]["key"]) == chosen
+    assert row["optimization"]["state"] == "done"
+
+
+def video_service_module():
+    from app.services import video_service
+
+    return video_service

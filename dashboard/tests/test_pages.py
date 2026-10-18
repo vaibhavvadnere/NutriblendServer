@@ -983,7 +983,13 @@ def test_video_detail_document_section():
     at = run_page("video_detail", {"id": "v2"})
     assert not at.exception, at.exception
     assert any("Guide.pptx" in m.value and "PowerPoint" in m.value and "2 pages" in m.value for m in at.markdown)
-    assert at.number_input(key="video_detail.doc_page.v2").value == 1
+    assert at.session_state["video_detail.doc_page.v2"] == 1
+    assert at.button(key="video_detail.doc_page.v2.prev").disabled
+    at.button(key="video_detail.doc_page.v2.next").click().run()
+    assert at.session_state["video_detail.doc_page.v2"] == 2
+    assert at.button(key="video_detail.doc_page.v2.next").disabled
+    at.button(key="video_detail.doc_page.v2.prev").click().run()
+    assert at.session_state["video_detail.doc_page.v2"] == 1
     next(b for b in at.button if b.label == "Remove document").click().run()
     assert "admin_document" not in VIDEOS["v2"]
     assert any("Document removed" in s.value for s in at.success)

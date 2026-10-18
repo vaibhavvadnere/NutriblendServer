@@ -93,6 +93,28 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+async def grab_frame(src: Path, duration: float) -> Optional[bytes]:
+    """A JPEG frame from partway into the video, to use as its thumbnail when it has none yet.
+    None (never raises) if ffmpeg can't produce one — a missing thumbnail is never worth failing the job over."""
+    if not shutil.which("ffmpeg"):
+        return None
+    at = min(max(duration * 0.1, 1.0), max(duration - 0.5, 0.0)) if duration > 0 else 0.0
+    proc = await asyncio.create_subprocess_exec(
+        shutil.which("ffmpeg") or "ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", f"{at:.2f}", "-i", str(src),
+        "-frames:v", "1", "-vf", "scale=640:-2", "-f", "image2", "-vcodec", "mjpeg", "pipe:1",
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return None
+    if proc.returncode != 0 or not out:
+        return None
+    return out
+
+
 # ── Encoding ─────────────────────────────────────────────────────────────────
 
 def ffmpeg_args(src: Path, dst: Path) -> list[str]:
@@ -248,6 +270,20 @@ async def _run_job(doc: dict) -> None:
                 await asyncio.to_thread(shutil.copyfile, src_path, final_path)
         sha = await asyncio.to_thread(_sha256_file, final_path)
         final_size = final_path.stat().st_size
+
+        auto_thumb: Optional[dict[str, Any]] = None
+        if not doc.get("thumbnail") and not doc.get("replaces"):
+            # A picture to show in the admin list and, once published, in the app — grabbed now while the
+            # finished file is still on disk. Optional: never fails the job, and an existing thumbnail is kept.
+            frame = await grab_frame(final_path, final_info["duration"])
+            if frame:
+                thumb_key = f"thumbnails/{video_id}/{uuid.uuid4().hex}.jpg"
+                try:
+                    await get_storage().put(thumb_key, frame, "image/jpeg")
+                    auto_thumb = {"key": thumb_key, "size": len(frame), "content_type": "image/jpeg"}
+                except StorageError:
+                    pass
+
         new_key = f"videos/{video_id}/{uuid.uuid4().hex}.mp4"
         storage = get_storage()
         await storage.put_file(new_key, final_path, "video/mp4")      # the file is consumed
@@ -277,7 +313,14 @@ async def _run_job(doc: dict) -> None:
         updated = await video_repo.update(video_id, {"file": file, "optimization": optimization, "updated_at": now})
         if updated is None:
             await storage.delete(new_key)          # deleted just now
+            if auto_thumb:
+                await storage.delete(auto_thumb["key"])
             return
+        if auto_thumb:
+            # Only if the video still has no picture: the admin may have saved a cover while this job was running
+            # (the dashboard saves the browser-made cover right after the upload), and that one always wins.
+            if not await video_repo.set_thumbnail_if_missing(video_id, auto_thumb):
+                await storage.delete(auto_thumb["key"])
     finally:
         out_path.unlink(missing_ok=True)
         (staging.staging_dir() / f"keep-{video_id}.mp4").unlink(missing_ok=True)

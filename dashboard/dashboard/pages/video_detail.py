@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import html
 import streamlit as st
 
 from dashboard import navigation
@@ -282,10 +283,12 @@ def _document_section(video: Video) -> None:
                 except ApiError as exc:
                     st.error(exc.message)
                 else:
-                    page = st.number_input("Page", min_value=1, max_value=viewer.page_count, value=1, step=1,
-                                           key=f"{_PAGE_KEY}.{video.id}")
-                    st.image(viewer.pages[int(page) - 1], caption=f"Page {int(page)} of {viewer.page_count}",
-                             width="stretch")
+                    # Fetch every page image into the browser now, so turning a page doesn't wait for a download.
+                    _preload = "".join(f'<img src="{html.escape(u, quote=True)}" loading="eager" alt="">'
+                                       for u in viewer.pages[:60])
+                    st.markdown(f'<div style="position:absolute;width:0;height:0;overflow:hidden;opacity:0">'
+                                f'{_preload}</div>', unsafe_allow_html=True)
+                    _page_viewer(video.id, list(viewer.pages), viewer.page_count)
 
     with st.expander("Replace document" if doc else "Attach a document", expanded=doc is None):
         chosen, task = _box(video, "doc", uploads.ORIGIN_DOCUMENT, "document", kind="document")
@@ -302,6 +305,25 @@ def _document_section(video: Video) -> None:
         if doc and not task and right.button("Remove document", icon=":material/delete:", width="stretch",
                                             key=f"doc.{video.id}.remove"):
             _act(lambda: videos_api.remove_document(client, video.id), "Document removed.")
+
+
+@st.fragment
+def _page_viewer(video_id: str, pages: list, count: int) -> None:
+    """One page at a time with previous / next arrows (only this block re-draws when you turn the page)."""
+    key = f"{_PAGE_KEY}.{video_id}"
+
+    def turn(step: int) -> None:      # runs before the block is drawn, so the arrows are never stale
+        st.session_state[key] = min(max(int(st.session_state.get(key, 1)) + step, 1), count)
+
+    page = min(max(int(st.session_state.get(key, 1)), 1), count)
+    st.session_state[key] = page
+    prev_col, label_col, next_col = st.columns([1, 4, 1], vertical_alignment="center")
+    prev_col.button("", icon=":material/chevron_left:", key=f"{key}.prev", disabled=page <= 1, width="stretch",
+                    help="Previous page", on_click=turn, args=(-1,))
+    next_col.button("", icon=":material/chevron_right:", key=f"{key}.next", disabled=page >= count, width="stretch",
+                    help="Next page", on_click=turn, args=(1,))
+    label_col.markdown(f"<div style='text-align:center'>Page <b>{page}</b> of {count}</div>", unsafe_allow_html=True)
+    st.image(pages[page - 1], width="stretch")
 
 
 def _pending_optimization(video: Video, client) -> tuple[Optional[Video], str]:

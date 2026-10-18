@@ -6,31 +6,76 @@
   :root { --text:#31333f; --bg:#fff; --soft:#f0f2f6; --primary:#2e7d32; --line:#e6e9ef; --muted:#808495; }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: transparent; color: var(--text); font: 14px/1.4 "Source Sans", "Source Sans Pro", system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .wrap { border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; background: var(--bg); }
-  table { border-collapse: collapse; width: 100%; min-width: 760px; }
-  th, td { text-align: left; padding: 8px 12px; white-space: nowrap; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 400; background: var(--soft); user-select: none; cursor: pointer; position: sticky; top: 0; }
-  th:hover { color: var(--text); }
-  th .arrow { display: inline-block; width: 1em; font-size: 10px; margin-left: 2px; }
-  td.right, th.right { text-align: right; }
-  tr:last-child td { border-bottom: 0; }
-  tbody tr { cursor: pointer; }
-  tbody tr:hover td { background: color-mix(in srgb, var(--primary) 8%, var(--bg)); }
-  tbody tr:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-  tbody tr.clicked td { background: color-mix(in srgb, var(--primary) 18%, var(--bg)); }
-  td.title { font-weight: 600; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; background: #9e9e9e; }
-  .dot.published { background: #2e7d32; } .dot.uploading { background: #ef6c00; } .dot.optimizing { background: #1976d2; } .dot.problem { background: #c62828; }
+  #wrap { padding: 2px 2px 6px; }
+
+  /* sort chips */
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+  .bar .lbl { color: var(--muted); font-size: 12px; margin-right: 2px; }
+  .chip { border: 1px solid var(--line); background: var(--bg); color: var(--muted); border-radius: 999px; padding: 3px 11px; font: inherit; font-size: 12.5px; cursor: pointer; transition: all .15s; }
+  .chip:hover { color: var(--text); border-color: color-mix(in srgb, var(--primary) 45%, var(--line)); }
+  .chip.on { color: var(--primary); border-color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, var(--bg)); font-weight: 600; }
+
+  /* one card per video */
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row { position: relative; display: grid; grid-template-columns: 96px minmax(150px, 2fr) minmax(150px, 1.3fr) 70px 46px 92px 16px;
+         align-items: center; gap: 12px; padding: 9px 14px 9px 12px; background: var(--bg); border: 1px solid var(--line);
+         border-radius: 12px; cursor: pointer; transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease, background .14s ease; overflow: hidden; }
+  .row::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent, #9e9e9e); }
+  .row:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--primary) 55%, var(--line));
+               box-shadow: 0 6px 18px rgba(20, 40, 25, .10); background: color-mix(in srgb, var(--primary) 5%, var(--bg)); }
+  .row:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  .row.clicked { background: color-mix(in srgb, var(--primary) 14%, var(--bg)); }
+  .row:hover .go { transform: translateX(3px); color: var(--primary); }
+  .row.published { --accent: #2e7d32; } .row.draft { --accent: #9e9e9e; } .row.uploading { --accent: #ef6c00; }
+  .row.optimizing { --accent: #1976d2; } .row.problem { --accent: #c62828; }
+
+  .thumb { position: relative; width: 96px; height: 54px; border-radius: 8px; overflow: hidden; background: var(--soft); flex: none; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: rgba(255,255,255,.92); }
+  .thumb .ph svg { width: 24px; height: 24px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.25)); }
+  .thumb .dur { position: absolute; right: 4px; bottom: 4px; background: rgba(0,0,0,.72); color: #fff; font-size: 11px; line-height: 1; padding: 3px 5px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+
+  .main { min-width: 0; }
+  .title { font-weight: 650; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tags { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .tag { font-size: 11.5px; line-height: 1; padding: 3px 8px; border-radius: 999px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+  .tag.cat { background: color-mix(in srgb, var(--primary) 11%, var(--bg)); color: var(--primary); font-weight: 600; }
+  .tag.doc { background: color-mix(in srgb, #1976d2 11%, var(--bg)); color: #1976d2; font-weight: 600; }
+
+  .state { min-width: 0; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+          background: color-mix(in srgb, var(--accent, #9e9e9e) 13%, var(--bg)); color: color-mix(in srgb, var(--accent, #9e9e9e) 85%, #000); }
+  .pill i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent, #9e9e9e); flex: none; }
+  .pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.uploading .pill i, .row.optimizing .pill i { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
+  .bar2 { height: 5px; border-radius: 999px; background: var(--soft); margin-top: 6px; overflow: hidden; }
+  .bar2 b { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .4s; }
+
+  .m { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .m small { display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; opacity: .75; }
+  .go { color: var(--muted); font-size: 22px; line-height: 1; text-align: right; transition: transform .14s, color .14s; }
   .empty { padding: 16px; color: var(--muted); }
+
+  @media (max-width: 740px) {
+    .row { grid-template-columns: 96px minmax(0, 1fr) minmax(130px, 1fr) 16px; }
+    .m { display: none; }
+  }
+  @media (max-width: 560px) {
+    .row { grid-template-columns: 96px minmax(0, 1fr) 18px; row-gap: 6px; }
+    .state { grid-column: 2 / 3; }
+    .row .go { grid-row: 1; grid-column: 3; }
+  }
 </style>
 </head>
 <body>
-<div class="wrap" id="wrap"><table><thead id="head"></thead><tbody id="body"></tbody></table></div>
+<div id="wrap"><div class="bar" id="bar"></div><div class="list" id="list"></div></div>
 <script>
 "use strict";
 // Streamlit component protocol (v1), no dependencies.
 const send = (type, extra) => window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, extra), "*");
-let seq = 0, state = { rows: [], columns: [], right: [] }, sortCol = null, sortDir = 1, clickedId = null;
+let seq = 0, state = { rows: [] }, sortCol = null, sortDir = 1, clickedId = null;
+const SORTS = ["Title", "Status", "Duration", "Size", "Order", "Added"];
 
 function cssTheme(theme) {
   if (!theme) return;
@@ -42,6 +87,9 @@ function cssTheme(theme) {
   if (theme.font) document.body.style.fontFamily = theme.font;
 }
 
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+const val = (v) => (v === null || v === undefined || v === "" ? "—" : String(v));
+
 function sortValue(row, col) {
   const s = row.sort && row.sort[col];
   if (s !== undefined && s !== null) return s;
@@ -49,74 +97,99 @@ function sortValue(row, col) {
   return typeof v === "string" ? v.toLowerCase() : v;
 }
 
-function open(row, tr) {
+function hue(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) % 360; return h; }
+const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+
+function thumb(row) {
+  const t = el("div", "thumb");
+  const placeholder = () => {
+    t.textContent = "";
+    const ph = el("div", "ph"); ph.innerHTML = PLAY;
+    const h = hue(row.Title);
+    ph.style.background = `linear-gradient(135deg, hsl(${h} 45% 42%), hsl(${(h + 40) % 360} 50% 55%))`;
+    t.appendChild(ph);
+    if (row.Duration && row.Duration !== "—") t.appendChild(el("span", "dur", row.Duration));
+  };
+  if (row.thumb) {
+    const img = document.createElement("img"); img.src = row.thumb; img.alt = ""; 
+    img.onerror = placeholder; t.appendChild(img);
+    if (row.Duration && row.Duration !== "—") t.appendChild(el("span", "dur", row.Duration));
+  } else placeholder();
+  return t;
+}
+
+function open(row, node) {
   clickedId = row.id;
-  document.querySelectorAll("tbody tr.clicked").forEach((e) => e.classList.remove("clicked"));
-  if (tr) tr.classList.add("clicked");
+  document.querySelectorAll(".row.clicked").forEach((e) => e.classList.remove("clicked"));
+  if (node) node.classList.add("clicked");
   send("streamlit:setComponentValue", { value: { seq: Date.now() + ":" + (++seq), id: row.id }, dataType: "json" });
 }
 
-function draw() {
-  const head = document.getElementById("head"), body = document.getElementById("body");
-  head.textContent = ""; body.textContent = "";
-  const trh = document.createElement("tr");
-  state.columns.forEach((c) => {
-    const th = document.createElement("th");
-    if (state.right.includes(c)) th.className = "right";
-    th.textContent = c;
-    const arrow = document.createElement("span"); arrow.className = "arrow";
-    arrow.textContent = sortCol === c ? (sortDir > 0 ? "▲" : "▼") : "";
-    th.appendChild(arrow);
-    th.addEventListener("click", () => {
-      if (sortCol === c) sortDir = -sortDir; else { sortCol = c; sortDir = 1; }
+function drawBar() {
+  const bar = document.getElementById("bar"); bar.textContent = "";
+  bar.appendChild(el("span", "lbl", "Sort by"));
+  SORTS.forEach((c) => {
+    const b = el("button", "chip" + (sortCol === c ? " on" : ""), c + (sortCol === c ? (sortDir > 0 ? " ↑" : " ↓") : ""));
+    b.type = "button";
+    b.addEventListener("click", () => {
+      if (sortCol === c) { if (sortDir > 0) sortDir = -1; else { sortCol = null; sortDir = 1; } } else { sortCol = c; sortDir = 1; }
       draw();
     });
-    trh.appendChild(th);
+    bar.appendChild(b);
   });
-  head.appendChild(trh);
+}
 
+function draw() {
+  drawBar();
+  const list = document.getElementById("list"); list.textContent = "";
   let rows = state.rows.slice();
-  if (sortCol) {
-    rows.sort((a, b) => {
-      const x = sortValue(a, sortCol), y = sortValue(b, sortCol);
-      return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
-    });
-  }
+  if (sortCol) rows.sort((a, b) => { const x = sortValue(a, sortCol), y = sortValue(b, sortCol); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
+  if (!rows.length) list.appendChild(el("div", "empty", "No videos."));
   rows.forEach((row) => {
-    const tr = document.createElement("tr");
-    tr.tabIndex = 0; tr.setAttribute("role", "link");
-    tr.setAttribute("aria-label", "Open " + (row.Title || "video"));
-    if (row.id === clickedId) tr.className = "clicked";
-    state.columns.forEach((c) => {
-      const td = document.createElement("td");
-      if (c === "Title") td.className = "title";
-      if (state.right.includes(c)) td.className += " right";
-      if (c === "Status") {
-        const dot = document.createElement("span"); dot.className = "dot " + (row.tone || "");
-        td.appendChild(dot);
-      }
-      td.appendChild(document.createTextNode(row[c] === null || row[c] === undefined ? "—" : String(row[c])));
-      if (c === "Title") td.title = String(row[c] || "");
-      tr.appendChild(td);
+    const node = el("div", "row " + (row.tone || "draft") + (row.id === clickedId ? " clicked" : ""));
+    node.tabIndex = 0; node.setAttribute("role", "link"); node.setAttribute("aria-label", "Open " + (row.Title || "video"));
+    node.appendChild(thumb(row));
+
+    const main = el("div", "main");
+    const title = el("div", "title", val(row.Title)); title.title = String(row.Title || "");
+    main.appendChild(title);
+    const tags = el("div", "tags");
+    if (row.Category && row.Category !== "—") tags.appendChild(el("span", "tag cat", row.Category));
+    if (row.Document && row.Document !== "—") tags.appendChild(el("span", "tag doc", row.Document));
+    if (tags.children.length) main.appendChild(tags);
+    node.appendChild(main);
+
+    const st = el("div", "state");
+    const pill = el("div", "pill"); pill.appendChild(el("i")); const ptxt = el("span", "", val(row.Status)); ptxt.title = String(row.Status || ""); pill.appendChild(ptxt);
+    st.appendChild(pill);
+    if (typeof row.progress === "number") { const bar = el("div", "bar2"); const f = el("b"); f.style.width = Math.round(Math.max(0, Math.min(1, row.progress)) * 100) + "%"; bar.appendChild(f); st.appendChild(bar); }
+    node.appendChild(st);
+
+    [["Size", row.Size], ["Order", "#" + val(row.Order)], ["Added", row.Added]].forEach(([k, v]) => {
+      const m = el("div", "m"); m.appendChild(el("small", "", k)); m.appendChild(document.createTextNode(val(v))); node.appendChild(m);
     });
-    tr.addEventListener("click", () => open(row, tr));
-    tr.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(row, tr); } });
-    body.appendChild(tr);
+    node.appendChild(el("div", "go", "›"));
+
+    node.addEventListener("click", () => open(row, node));
+    node.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(row, node); } });
+    list.appendChild(node);
   });
   report();
 }
 
 function report() {
-  send("streamlit:setFrameHeight", { height: Math.ceil(document.getElementById("wrap").getBoundingClientRect().height) + 4 });
+  send("streamlit:setFrameHeight", { height: Math.ceil(document.getElementById("wrap").getBoundingClientRect().height) + 8 });
 }
 
 window.addEventListener("message", (event) => {
   if (!event.data || event.data.type !== "streamlit:render") return;
   const a = event.data.args || {};
   cssTheme(event.data.theme);
-  const changed = JSON.stringify(a.rows) !== JSON.stringify(state.rows);
-  state = { rows: a.rows || [], columns: a.columns || [], right: a.right || [] };
-  if (changed || !document.getElementById("body").children.length) draw(); else report();
+  // signed picture links change on every refresh: ignore their query string, or the pictures would reload each time
+  const plain = (rows) => JSON.stringify((rows || []).map((r) => Object.assign({}, r, { thumb: r.thumb ? String(r.thumb).split("?")[0] : null })));
+  const changed = plain(a.rows) !== plain(state.rows);
+  state = { rows: a.rows || [] };
+  if (changed || !document.getElementById("list").children.length) draw(); else report();
 });
 new ResizeObserver(report).observe(document.getElementById("wrap"));
 send("streamlit:componentReady", { apiVersion: 1 });

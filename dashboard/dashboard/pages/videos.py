@@ -43,6 +43,15 @@ def _status_text(v, broken_ids: set[str] = frozenset()) -> str:
     return text
 
 
+def _progress(v):
+    """0..1 while something is uploading or being optimized, else None (drives the bar in the row)."""
+    if v.status == "uploading" and v.upload:
+        return float(v.upload.fraction)
+    if v.optimizing and v.optimization.state == "running":
+        return float(v.optimization.progress)
+    return None
+
+
 def _tone(v, broken_ids: set[str] = frozenset()) -> str:
     """Colour of the dot in front of the status."""
     if v.id in broken_ids or v.optimization_failed:
@@ -173,6 +182,8 @@ def _list_block(client, signature: tuple, polling: bool) -> None:
             "Category": v.category or "—",
             "Status": _status_text(v, broken_ids),
             "tone": _tone(v, broken_ids),
+            "thumb": v.thumbnail_url,
+            "progress": _progress(v),
             "Duration": fmt_duration(v.duration_seconds),
             "Size": fmt_bytes(v.file_size),
             "Document": (v.admin_document.file_type.upper() if v.admin_document else "—"),
