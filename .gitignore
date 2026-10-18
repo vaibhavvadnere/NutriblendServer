@@ -7,3 +7,4 @@ media/
 .pytest_cache/
 # Videos waiting for optimization / half-uploaded files (never commit)
 staging/
+_to_delete/
