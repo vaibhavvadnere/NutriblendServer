@@ -7,9 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from app.schemas.user import UserOut, validate_mobile_field, validate_name_field
-
-Role = Literal["user", "admin"]
+from app.schemas.user import Role, UserOut, validate_mobile_field, validate_name_field
 
 
 class AdminCreateRequest(BaseModel):
@@ -33,8 +31,8 @@ class AdminCreateRequest(BaseModel):
 
 
 class AdminAccountOut(UserOut):
-    """An account plus its role (only admin endpoints expose the role)."""
-    role: Role
+    """Kept as its own name for the admin endpoints. `role` now lives on
+    UserOut itself, so this adds nothing beyond a clearer signature."""
 
 
 class AdminMe(BaseModel):

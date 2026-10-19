@@ -70,6 +70,7 @@ def to_user_out(doc: dict) -> UserOut:
         email=doc.get("email"),
         state=doc.get("state"),
         status=status_value,
+        role=role_of(doc),
         is_verified=status_value == STATUS_ACTIVE,
         created_at=doc["created_at"],
         verified_at=doc.get("verified_at"),

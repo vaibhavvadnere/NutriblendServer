@@ -404,6 +404,21 @@ Previous smoke test (2026-09-21, 39 checks, all passed):
 
 ## 10. Change log
 
+- **2026-10-19** — **`role` exposed to the app.** `UserOut` now carries `role` (`"user"` |
+  `"admin"`), so `POST /auth/verify-otp` and `GET /users/me` tell the client what kind of
+  account it is holding. Admin accounts can still sign in to the app exactly as before — the
+  client decides what to do with the information. Deliberately **not** added to the OTP-sent
+  response of `/auth/signin` and `/auth/signup`. `Role` moved from
+  `schemas/admin.py` to `schemas/user.py`; `AdminAccountOut` no longer redeclares it. API only
+  — no app-side changes. 16 checks passing.
+- **2026-10-19 (follow-up)** — role also added to the **OTP-sent** response, so `/auth/signup`,
+  `/auth/signin`, `/auth/resend-otp` and `/admin/auth/signin` all return it alongside
+  `is_new_account`. Decided deliberately despite the trade-off: those endpoints are
+  unauthenticated, so anyone who can reach them can now discover which mobile numbers are
+  admin accounts by calling signin against a list. The OTP rate limits (60s cooldown, 5/hour,
+  10/day per number, 20/hour per IP) are the only thing slowing that enumeration down.
+  14 checks passing.
+
 - **2026-09-30** — **Account deletion.** `POST /api/v1/auth/delete-account`: send the mobile
   number to get an OTP, send number + OTP to delete. No sign-in needed — holding the OTP is
   the proof of ownership. Soft delete: the row survives as an audit tombstone (`status:

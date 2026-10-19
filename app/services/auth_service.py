@@ -81,7 +81,9 @@ async def _throttle_otp(mobile_number: str, ip: str) -> None:
     await rate_limiter.enforce(*rate_limiter.otp_send_rules(mobile_number, ip))
 
 
-async def _issue_otp(mobile_number: str, is_new_account: bool, purpose: str = SCOPE_APP) -> OTPSentResponse:
+async def _issue_otp(
+    mobile_number: str, is_new_account: bool, purpose: str = SCOPE_APP, role: str = "user"
+) -> OTPSentResponse:
     """Shared tail of signup / signin / resend: generate, store, send.
     Throttling has already happened in _throttle_otp."""
     otp = generate_otp()
@@ -107,6 +109,7 @@ async def _issue_otp(mobile_number: str, is_new_account: bool, purpose: str = SC
         expires_in_minutes=settings.OTP_EXPIRE_MINUTES,
         resend_available_in_seconds=settings.OTP_COOLDOWN_SECONDS,
         is_new_account=is_new_account,
+        role=role,
         dev_otp=None if settings.is_production else otp,
     )
 
@@ -116,8 +119,10 @@ async def start_signup(
 ) -> OTPSentResponse:
     """Create (or refresh) a pending account and send it an OTP."""
     await _throttle_otp(mobile_number, ip)
-    await user_service.create_or_refresh_pending(mobile_number, name, email, state)
-    return await _issue_otp(mobile_number, is_new_account=True)
+    doc = await user_service.create_or_refresh_pending(mobile_number, name, email, state)
+    return await _issue_otp(
+        mobile_number, is_new_account=True, role=user_service.role_of(doc)
+    )
 
 
 async def start_signin(mobile_number: str, ip: str) -> OTPSentResponse:
@@ -126,7 +131,9 @@ async def start_signin(mobile_number: str, ip: str) -> OTPSentResponse:
     await _throttle_otp(mobile_number, ip)
     user = await user_service.get_for_signin(mobile_number)
     is_new = user.get("status") != user_service.STATUS_ACTIVE
-    return await _issue_otp(mobile_number, is_new_account=is_new)
+    return await _issue_otp(
+        mobile_number, is_new_account=is_new, role=user_service.role_of(user)
+    )
 
 
 async def start_admin_signin(mobile_number: str, ip: str) -> OTPSentResponse:
@@ -141,7 +148,12 @@ async def start_admin_signin(mobile_number: str, ip: str) -> OTPSentResponse:
     if not user_service.is_admin_account(user):
         raise NotAnAdmin()
     is_new = user.get("status") != user_service.STATUS_ACTIVE
-    return await _issue_otp(mobile_number, is_new_account=is_new, purpose=SCOPE_ADMIN)
+    return await _issue_otp(
+        mobile_number,
+        is_new_account=is_new,
+        purpose=SCOPE_ADMIN,
+        role=user_service.role_of(user),
+    )
 
 
 # ── Verifying OTPs ───────────────────────────────────────────────────────────
@@ -235,7 +247,12 @@ async def _start_account_deletion(mobile_number: str, ip: str) -> DeleteAccountR
     if user_service.is_admin_account(user):
         raise CannotDeleteAdmin()
 
-    sent = await _issue_otp(mobile_number, is_new_account=False, purpose=PURPOSE_DELETE)
+    sent = await _issue_otp(
+        mobile_number,
+        is_new_account=False,
+        purpose=PURPOSE_DELETE,
+        role=user_service.role_of(user),
+    )
     logger.info("Account deletion requested for %s from %s", mask(mobile_number), ip)
     return DeleteAccountResponse(
         otp_sent=True,

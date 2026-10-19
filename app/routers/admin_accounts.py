@@ -55,5 +55,5 @@ async def create_admin(payload: AdminCreateRequest, request: Request):
     ip = client_ip(request)
     doc = await user_service.create_admin(payload.mobile_number, payload.name, payload.email, ip)
     logger.warning("Admin account created for %s from %s", mask(payload.mobile_number), ip)
-    out = AdminAccountOut(**user_service.to_user_out(doc).model_dump(), role=user_service.ROLE_ADMIN)
+    out = AdminAccountOut(**user_service.to_user_out(doc).model_dump())
     return ok(out, "Admin account created. Sign in with OTP to activate it.")

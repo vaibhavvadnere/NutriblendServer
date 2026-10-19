@@ -8,6 +8,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.schemas.user import (
+    Role,
     UserOut,
     validate_mobile_field,
     validate_name_field,
@@ -75,6 +76,12 @@ class OTPSentResponse(BaseModel):
     resend_available_in_seconds: int
     #: Tells the app whether to go to the "create profile" or "welcome back" screen.
     is_new_account: bool
+    #: "user" or "admin", so the client can route before the OTP screen.
+    #: NOTE: this endpoint is unauthenticated, so anyone who can call it can
+    #: discover which mobile numbers are admin accounts. Returned here by
+    #: explicit product decision; the rate limiter is the only thing slowing
+    #: enumeration down.
+    role: Role = "user"
     #: Populated only when ENV != production, so you can test without real SMS.
     dev_otp: Optional[str] = None
 

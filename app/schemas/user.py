@@ -13,13 +13,18 @@ from app.utils.phone import MOBILE_REGEX, InvalidMobileNumber, normalize_mobile
 #   pending — signed up, mobile number not yet proven. Overwritable, auto-expires.
 #   active  — verified. Can sign in.
 #   blocked — barred by an admin. Cannot sign in.
-UserStatus = Literal["pending", "active", "blocked"]
+UserStatus = Literal["pending", "active", "blocked", "deleted"]
+
+#: What kind of account this is. The app reads this to decide what to show —
+#: an admin can still sign in to the app as a normal person, so the client
+#: needs to be told which it is dealing with.
+Role = Literal["user", "admin"]
 
 __all__ = [
     "MOBILE_REGEX",
     "UserCreate",
     "UserOut",
-    "UserStatus",
+    "UserStatus", "Role",
     "validate_mobile_field",
     "validate_name_field",
     "validate_state_field",
@@ -109,6 +114,10 @@ class UserOut(BaseModel):
     email: Optional[EmailStr] = None
     state: Optional[str] = None
     status: UserStatus = "pending"
+    #: "user" or "admin". Returned only on authenticated responses
+    #: (verify-otp, /users/me) — never on the unauthenticated OTP-sent
+    #: response, which would let anyone probe for admin numbers.
+    role: Role = "user"
     is_verified: bool
     created_at: datetime
     verified_at: Optional[datetime] = None
