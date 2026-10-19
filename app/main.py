@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core import database
 from app.core.config import settings
 from app.core.errors import register_error_handlers
+from app.providers.email import current_provider_name as email_provider_name
 from app.providers.sms import current_provider_name
 from app.providers.storage import get_storage
 from app.routers import admin, admin_accounts, admin_auth, admin_videos, auth, legal, media, users, videos
@@ -42,7 +43,7 @@ async def lifespan(app: FastAPI):
         logger.info("Media storage reachable: %s", await storage.check())
     await video_service.cleanup_expired_uploads()
     await document_service.resume_unfinished()
-    logger.info("SMS provider: %s", current_provider_name())
+    logger.info("SMS provider: %s | Email provider: %s", current_provider_name(), email_provider_name())
     worker = None
     if optimizer.active():
         worker = asyncio.create_task(optimizer.worker_loop(), name="video-optimizer")
@@ -128,6 +129,7 @@ async def health(request: Request):
         "env": settings.ENV,
         "database": db_status,
         "sms_provider": current_provider_name(),
+        "email_provider": email_provider_name(),
         "storage": f"{get_storage().name} ({get_storage().health()})",
         "base_url": base_url,
         "api_base_url": f"{base_url}{settings.API_PREFIX.strip('/')}/",

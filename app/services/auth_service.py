@@ -27,6 +27,7 @@ Everything here takes plain values: the router has already validated the
 input and worked out the caller's IP.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -54,6 +55,7 @@ from app.core.security import (
     hash_otp,
     verify_otp_hash,
 )
+from app.providers import email as email_provider
 from app.providers.sms import SMSDeliveryError, send_otp_sms
 from app.repositories import otp_repo
 from app.schemas.auth import (
@@ -82,10 +84,23 @@ async def _throttle_otp(mobile_number: str, ip: str) -> None:
 
 
 async def _issue_otp(
-    mobile_number: str, is_new_account: bool, purpose: str = SCOPE_APP, role: str = "user"
+    mobile_number: str,
+    is_new_account: bool,
+    purpose: str = SCOPE_APP,
+    role: str = "user",
+    email: Optional[str] = None,
 ) -> OTPSentResponse:
-    """Shared tail of signup / signin / resend: generate, store, send.
-    Throttling has already happened in _throttle_otp."""
+    """
+    Shared tail of signup / signin / resend: generate, store, send.
+    Throttling has already happened in _throttle_otp.
+
+    The SAME code goes to the mobile number and, when the account has one, to
+    its email address. Both are attempted concurrently so a slow mail server
+    does not add its latency to the SMS.
+
+    Whether a partly-failed send counts as a failure is governed by
+    OTP_REQUIRE_ALL_CHANNELS — see the note on that setting in core/config.py.
+    """
     otp = generate_otp()
     now = datetime.now(timezone.utc)
     await otp_repo.save(
@@ -96,16 +111,53 @@ async def _issue_otp(
         purpose=purpose,
     )
 
-    try:
+    use_email = bool(email) and email_provider.is_enabled()
+
+    async def _sms() -> None:
         await send_otp_sms(mobile_number, otp)
-    except SMSDeliveryError as exc:
-        # Don't leave a live OTP behind that the user never received.
+
+    async def _email() -> None:
+        await email_provider.send_otp_email(email, otp, purpose)
+
+    results = await asyncio.gather(
+        _sms(),
+        *( [_email()] if use_email else [] ),
+        return_exceptions=True,
+    )
+
+    sms_error = results[0] if isinstance(results[0], BaseException) else None
+    email_error = (
+        results[1] if use_email and isinstance(results[1], BaseException) else None
+    )
+
+    delivered = []
+    if sms_error is None:
+        delivered.append("sms")
+    else:
+        logger.error("SMS OTP failed for %s: %s", mask(mobile_number), sms_error)
+    if use_email:
+        if email_error is None:
+            delivered.append("email")
+        else:
+            logger.error(
+                "Email OTP failed for %s: %s", email_provider.mask_email(email), email_error
+            )
+
+    attempted = 1 + (1 if use_email else 0)
+    failed = (
+        len(delivered) < attempted
+        if settings.OTP_REQUIRE_ALL_CHANNELS
+        else not delivered
+    )
+    if failed:
+        # Never leave a live OTP behind for a message the user did not get.
         await otp_repo.delete_by_mobile(mobile_number)
-        logger.error("OTP delivery failed for %s: %s", mask(mobile_number), exc)
         raise OtpSendFailed()
 
     return OTPSentResponse(
         mobile_number=mask(mobile_number),
+        email=email_provider.mask_email(email) if use_email else None,
+        sent_to=delivered,
         expires_in_minutes=settings.OTP_EXPIRE_MINUTES,
         resend_available_in_seconds=settings.OTP_COOLDOWN_SECONDS,
         is_new_account=is_new_account,
@@ -121,7 +173,10 @@ async def start_signup(
     await _throttle_otp(mobile_number, ip)
     doc = await user_service.create_or_refresh_pending(mobile_number, name, email, state)
     return await _issue_otp(
-        mobile_number, is_new_account=True, role=user_service.role_of(doc)
+        mobile_number,
+        is_new_account=True,
+        role=user_service.role_of(doc),
+        email=doc.get("email"),
     )
 
 
@@ -132,7 +187,10 @@ async def start_signin(mobile_number: str, ip: str) -> OTPSentResponse:
     user = await user_service.get_for_signin(mobile_number)
     is_new = user.get("status") != user_service.STATUS_ACTIVE
     return await _issue_otp(
-        mobile_number, is_new_account=is_new, role=user_service.role_of(user)
+        mobile_number,
+        is_new_account=is_new,
+        role=user_service.role_of(user),
+        email=user.get("email"),
     )
 
 
@@ -153,6 +211,7 @@ async def start_admin_signin(mobile_number: str, ip: str) -> OTPSentResponse:
         is_new_account=is_new,
         purpose=SCOPE_ADMIN,
         role=user_service.role_of(user),
+        email=user.get("email"),
     )
 
 
@@ -252,6 +311,7 @@ async def _start_account_deletion(mobile_number: str, ip: str) -> DeleteAccountR
         is_new_account=False,
         purpose=PURPOSE_DELETE,
         role=user_service.role_of(user),
+        email=user.get("email"),
     )
     logger.info("Account deletion requested for %s from %s", mask(mobile_number), ip)
     return DeleteAccountResponse(

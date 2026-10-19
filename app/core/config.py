@@ -192,6 +192,44 @@ class Settings(BaseSettings):
     # Also used by scripts/r2_cors.py to allow browser uploads into the bucket.
     DASHBOARD_ORIGINS: list[str] = ["http://localhost:8501", "http://127.0.0.1:8501"]
 
+    # ── Email delivery ───────────────────────────────────────────────────────
+    # Sending the OTP to BOTH the mobile number and the account's email is a
+    # temporary arrangement while DLT registration for SMS is pending.
+    # EMAIL_ENABLED=false switches the whole channel off again in one place.
+    EMAIL_ENABLED: bool = True
+    # mock | smtp | brevo
+    EMAIL_PROVIDER: str = "mock"
+    EMAIL_FROM: str = "noreply@nutriblend.co.in"
+    EMAIL_FROM_NAME: str = "Nutriblend"
+    EMAIL_TIMEOUT_SECONDS: float = 15.0
+    # Subject line for the OTP email. "{otp}" and "{app}" are substituted.
+    # Put {otp} in it if you want users to read the code from the notification
+    # banner without opening the message.
+    EMAIL_OTP_SUBJECT: str = "Verification OTP from Nutriblend"
+    # Short brand name used in the email subject and body.
+    APP_NAME_SHORT: str = "Nutriblend"
+
+    # When true, an OTP request fails unless EVERY channel the account has
+    # delivered successfully. When false, one successful channel is enough and
+    # the other is logged as a warning.
+    #
+    # Note the failure mode of `true`: the email on an account is never
+    # verified, so a typo'd address ("gmial.com") fails forever and locks that
+    # user out even though their SMS arrived. Flip this to false if that shows
+    # up in support.
+    OTP_REQUIRE_ALL_CHANNELS: bool = True
+
+    # SMTP (works with Brevo's relay, Zoho, Google Workspace, your host's mail)
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_USE_TLS: bool = True      # STARTTLS, the usual choice on port 587
+    SMTP_USE_SSL: bool = False     # implicit TLS, for port 465
+
+    # Brevo transactional API
+    BREVO_API_KEY: Optional[str] = None
+
     # ── SMS delivery ─────────────────────────────────────────────────────────
     # Which provider actually sends the OTP. "mock" just logs it (dev default).
     SMS_PROVIDER: Literal["mock", "msg91", "twilio", "fast2sms"] = "mock"

@@ -71,6 +71,12 @@ class OTPSentResponse(BaseModel):
     #: Masked, so the app can show "OTP sent to 98XXXXXX10" without echoing
     #: the full number back onto a shared screen.
     mobile_number: str
+    #: Masked email ("b•••@gmail.com"), present only when the code was also
+    #: emailed. Null when the account has no email or email is switched off.
+    email: Optional[str] = None
+    #: Which channels actually delivered, e.g. ["sms"] or ["sms","email"].
+    #: Lets the app say exactly where to look for the code.
+    sent_to: list[str] = []
     expires_in_minutes: int
     #: Seconds until another OTP may be requested — drives the "Resend in 47s" timer.
     resend_available_in_seconds: int

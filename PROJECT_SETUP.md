@@ -404,6 +404,19 @@ Previous smoke test (2026-09-21, 39 checks, all passed):
 
 ## 10. Change log
 
+- **2026-10-19 (email OTP)** — **The same OTP now goes to the mobile number and, when the
+  account has one, to its email address.** New `app/providers/email/` package mirroring the SMS
+  one: `mock` (default, logs only), `smtp` (any relay/mailbox) and `brevo` (free tier, 300/day),
+  chosen by `EMAIL_PROVIDER`. Both channels are attempted **concurrently**, so a slow mail
+  server adds no latency to the SMS. All six OTP-sending flows inherit it, since they share
+  `_issue_otp`. The OTP-sent response gained `sent_to` (`["sms","email"]`) and a masked `email`,
+  so the app can say exactly where to look. `/api/health` reports the email provider.
+  `OTP_REQUIRE_ALL_CHANNELS=true` (chosen): a failed email fails the whole request.
+  ⚠️ Email addresses are **never verified**, so a typo'd address fails forever and locks that
+  user out despite a successful SMS — flip the setting to `false` if that appears in support.
+  Whole channel switches off with `EMAIL_ENABLED=false`, which is how this reverts once DLT
+  clears. 30 checks passing.
+
 - **2026-10-19** — **`role` exposed to the app.** `UserOut` now carries `role` (`"user"` |
   `"admin"`), so `POST /auth/verify-otp` and `GET /users/me` tell the client what kind of
   account it is holding. Admin accounts can still sign in to the app exactly as before — the
