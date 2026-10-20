@@ -101,6 +101,24 @@ async def list_orders(
     return await cursor.to_list(length=page_size), total
 
 
+async def find_unsettled(created_after: datetime, created_before: datetime, limit: int) -> list[dict]:
+    """Unconfirmed orders (created/failed) in a time window, least recently checked
+    first — so a backlog is worked through over successive runs."""
+    cursor = (
+        payment_orders_collection.find({
+            "status": {"$in": [STATUS_CREATED, STATUS_FAILED]},
+            "created_at": {"$gte": created_after, "$lte": created_before},
+        })
+        .sort([("reconciled_at", 1), ("created_at", 1)])
+        .limit(limit)
+    )
+    return await cursor.to_list(length=limit)
+
+
+async def mark_checked(order_id: str, when: datetime) -> None:
+    await payment_orders_collection.update_one({"razorpay_order_id": order_id}, {"$set": {"reconciled_at": when}})
+
+
 async def paid_orders_for_user(user_id: ObjectId) -> list[dict]:
     """Every still-paid order of a user, oldest first (used to rebuild after a refund)."""
     cursor = payment_orders_collection.find({"user_id": user_id, "status": STATUS_PAID}).sort("paid_at", 1)

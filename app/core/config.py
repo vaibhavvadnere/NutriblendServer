@@ -279,6 +279,18 @@ class Settings(BaseSettings):
     RAZORPAY_WEBHOOK_SECRET: Optional[str] = None
     RAZORPAY_API_BASE: str = "https://api.razorpay.com/v1"
     RAZORPAY_TIMEOUT_SECONDS: float = 15.0
+    # Safety net for payments that were taken but never confirmed (app closed
+    # before /verify AND the webhook never arrived): every N minutes, ask Razorpay
+    # about recent unconfirmed orders and complete the ones that were paid.
+    PAYMENTS_RECONCILE_ENABLED: bool = True
+    PAYMENTS_RECONCILE_INTERVAL_MINUTES: int = 15
+    # Only orders created within this window are checked (older = abandoned).
+    PAYMENTS_RECONCILE_LOOKBACK_HOURS: int = 48
+    # Orders younger than this are left alone — the normal verify/webhook path
+    # is still in progress.
+    PAYMENTS_RECONCILE_MIN_AGE_MINUTES: int = 5
+    # Razorpay calls per run, at most.
+    PAYMENTS_RECONCILE_BATCH: int = 50
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -137,3 +137,10 @@ class UserSubscriptionAdminOut(BaseModel):
 
 class RevokeSubscriptionRequest(BaseModel):
     note: Optional[str] = Field(default=None, max_length=200)
+
+
+class ReconcileResult(BaseModel):
+    """Admin "Check with Razorpay": what was found, and the order afterwards.
+    result: granted | already_done | not_paid | pending_capture | mismatch"""
+    result: str
+    order: PaymentOrderOut

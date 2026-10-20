@@ -19,10 +19,11 @@ from app.schemas.payment import (
     PlanAdminOut,
     PlanCreate,
     PlanUpdate,
+    ReconcileResult,
     RevokeSubscriptionRequest,
     UserSubscriptionAdminOut,
 )
-from app.services import admin_payment_service, plan_service
+from app.services import admin_payment_service, payment_reconcile_service, plan_service
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/admin",
@@ -64,6 +65,19 @@ async def list_payments(
 ):
     """Orders newest first. `created` = checkout opened but not paid (yet)."""
     return ok(await admin_payment_service.list_orders(status, user_id, page, page_size), "Payments fetched")
+
+
+@router.post("/payments/{razorpay_order_id}/check", response_model=ApiResponse[ReconcileResult])
+async def check_payment(razorpay_order_id: str):
+    """
+    Ask Razorpay about one order now and complete it if it was paid (for a user
+    who says "I paid but got nothing"). Safe to repeat — never grants twice.
+
+    `result`: `granted` (was paid, access given now) · `already_done` ·
+    `not_paid` · `pending_capture` (bank approved, not captured yet) ·
+    `mismatch` (paid amount differs — investigate in Razorpay).
+    """
+    return ok(await payment_reconcile_service.check_order(razorpay_order_id), "Checked with Razorpay")
 
 
 # ── One user's access ────────────────────────────────────────────────────────

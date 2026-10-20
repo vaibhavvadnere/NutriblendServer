@@ -14,6 +14,10 @@ ORDER = {"id": "o1", "user_id": "u7", "mobile_number": "9123400007", "plan_id": 
          "paid_at": "2026-10-20T10:01:00Z"}
 
 
+STARTED = {**ORDER, "id": "o2", "razorpay_order_id": "order_2", "razorpay_payment_id": None, "status": "created",
+           "paid_via": None, "paid_at": None}
+
+
 def ok(data, code=200):
     return httpx.Response(code, json={"success": True, "message": "ok", "data": data})
 
@@ -31,7 +35,9 @@ def server(req: httpx.Request) -> httpx.Response:
         plan = next(p for p in PLANS if p["id"] == path.rsplit("/", 1)[1]); plan.update(body)
         return ok(plan)
     if path == "/api/v1/admin/payments":
-        return ok({"items": [ORDER], "total": 1, "page": 1, "page_size": 20, "pages": 1})
+        return ok({"items": [ORDER, STARTED], "total": 2, "page": 1, "page_size": 20, "pages": 1})
+    if path == "/api/v1/admin/payments/order_2/check":
+        return ok({"result": "granted", "order": {**STARTED, "status": "paid", "paid_via": "admin_check"}})
     if path == "/api/v1/admin/users/u7/subscription":
         return ok(SUB)
     if path.startswith("/api/v1/admin/users/u7/subscription/"):
@@ -99,3 +105,12 @@ def test_user_subscription_grant_and_revoke():
     next(b for b in at.button if b.label == "End access now").click().run()
     assert any(b.label == "End access" for b in at.button)
     assert not any(c[1].endswith("/revoke") for c in CALLS)
+
+
+def test_check_an_order_with_razorpay():
+    at = run_page("payments")
+    assert not at.exception, at.exception
+    assert len(at.dataframe[0].value) == 2
+    next(b for b in at.button if b.label == "Check with Razorpay").click().run()
+    assert ("POST", "/api/v1/admin/payments/order_2/check", None) in CALLS
+    assert any("access has been given" in s.value for s in at.success)

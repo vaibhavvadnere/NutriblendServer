@@ -437,3 +437,88 @@ def test_video_lock(pay):
     o = pay.order(plan["id"])
     pay.verify(o["order_id"], *pay.provider.pay(o["order_id"]))
     assert pay.client.get("/api/v1/videos", headers=pay.user).status_code == 200
+
+
+# ── Reconcile safety net ─────────────────────────────────────────────────────
+
+def _age(pay, order_id, minutes):
+    """Pretend an order was created `minutes` ago."""
+    asyncio.run(pay.database["payment_orders"].update_one(
+        {"razorpay_order_id": order_id},
+        {"$set": {"created_at": datetime.now(timezone.utc) - timedelta(minutes=minutes)}},
+    ))
+
+
+def test_reconcile_completes_a_paid_but_unconfirmed_order(pay):
+    from app.services import payment_reconcile_service as rec
+
+    plan = pay.plan()
+    orphan = pay.order(plan["id"])       # paid, but no verify and no webhook
+    pay.provider.pay(orphan["order_id"])
+    unpaid = pay.order(plan["id"])        # checkout opened and abandoned
+    young = pay.order(plan["id"])         # paid seconds ago: normal flow still in progress
+    pay.provider.pay(young["order_id"])
+    _age(pay, orphan["order_id"], 30)
+    _age(pay, unpaid["order_id"], 30)
+    _age(pay, young["order_id"], 1)
+
+    counts = asyncio.run(rec.run_once())
+    assert counts == {"granted": 1, "not_paid": 1}
+    sub = pay.sub()
+    assert sub["is_active"] and sub["days_left"] == 30
+    item = next(i for i in pay.client.get("/api/v1/admin/payments?status=paid", headers=pay.admin).json()["data"]["items"])
+    assert item["paid_via"] == "reconcile" and item["razorpay_order_id"] == orphan["order_id"]
+    # A late webhook / verify for the same payment changes nothing.
+    pid = item["razorpay_payment_id"]
+    assert pay.webhook(captured(orphan["order_id"], pid, 19900), "late").json()["data"]["result"] == "already_done"
+    assert asyncio.run(rec.run_once()).get("granted") is None
+    assert pay.sub()["days_left"] == 30
+
+
+def test_reconcile_skips_old_orders_and_reports_pending_and_mismatch(pay):
+    from app.services import payment_reconcile_service as rec
+
+    plan = pay.plan()
+    old = pay.order(plan["id"]); pay.provider.pay(old["order_id"]); _age(pay, old["order_id"], 60 * 72)
+    pending = pay.order(plan["id"]); pay.provider.pay(pending["order_id"], status="authorized"); _age(pay, pending["order_id"], 30)
+    wrong = pay.order(plan["id"]); pid, _ = pay.provider.pay(wrong["order_id"]); _age(pay, wrong["order_id"], 30)
+    pay.provider.payments[pid]["amount"] = 100
+    assert asyncio.run(rec.run_once()) == {"pending_capture": 1, "mismatch": 1}
+    assert pay.sub()["is_active"] is False
+
+
+def test_reconcile_stops_quietly_when_razorpay_is_down(pay):
+    from app.services import payment_reconcile_service as rec
+
+    o = pay.order(pay.plan()["id"]); pay.provider.pay(o["order_id"]); _age(pay, o["order_id"], 30)
+    pay.provider.fail_next = "down"
+    assert asyncio.run(rec.run_once()) == {"error": 1}
+    assert asyncio.run(rec.run_once()) == {"granted": 1}  # next run picks it up
+
+
+def test_admin_check_with_razorpay(pay):
+    o = pay.order(pay.plan()["id"])
+    url = f"/api/v1/admin/payments/{o['order_id']}/check"
+    assert pay.client.post(url, headers=pay.user).status_code == 403
+    assert pay.client.post(url, headers=pay.admin).json()["data"]["result"] == "not_paid"
+    pay.provider.pay(o["order_id"])
+    r = pay.client.post(url, headers=pay.admin).json()["data"]
+    assert r["result"] == "granted" and r["order"]["status"] == "paid" and r["order"]["paid_via"] == "admin_check"
+    assert pay.client.post(url, headers=pay.admin).json()["data"]["result"] == "already_done"
+    assert pay.client.post("/api/v1/admin/payments/order_nope/check", headers=pay.admin).status_code == 404
+    assert pay.sub()["days_left"] == 30
+
+
+def test_reconcile_loop_only_runs_with_real_razorpay_keys(monkeypatch):
+    from app.core.config import settings
+    from app.services import payment_reconcile_service as rec
+
+    monkeypatch.setattr(settings, "PAYMENT_PROVIDER", "mock")
+    assert rec.active() is False
+    monkeypatch.setattr(settings, "PAYMENT_PROVIDER", "razorpay")
+    monkeypatch.setattr(settings, "RAZORPAY_KEY_ID", "rzp_test_x")
+    monkeypatch.setattr(settings, "RAZORPAY_KEY_SECRET", "s")
+    monkeypatch.setattr(settings, "PAYMENTS_RECONCILE_ENABLED", True)
+    assert rec.active() is True
+    monkeypatch.setattr(settings, "PAYMENTS_RECONCILE_ENABLED", False)
+    assert rec.active() is False

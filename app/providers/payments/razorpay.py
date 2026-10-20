@@ -67,3 +67,7 @@ class RazorpayProvider(PaymentProvider):
 
     async def fetch_payment(self, payment_id: str) -> dict[str, Any]:
         return await self._request("GET", f"payments/{payment_id}")
+
+    async def fetch_order_payments(self, order_id: str) -> list[dict[str, Any]]:
+        # GET /orders/:id/payments → {"entity": "collection", "count": n, "items": [...]}
+        return (await self._request("GET", f"orders/{order_id}/payments")).get("items") or []

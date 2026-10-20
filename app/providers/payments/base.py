@@ -53,6 +53,10 @@ class PaymentProvider(ABC):
     async def fetch_payment(self, payment_id: str) -> dict[str, Any]:
         """Fetch one payment. Returns at least {"id", "order_id", "status", "amount"}."""
 
+    @abstractmethod
+    async def fetch_order_payments(self, order_id: str) -> list[dict[str, Any]]:
+        """Every payment attempt made on one order (any status)."""
+
     # ── Signatures (shared) ──────────────────────────────────────────────────
 
     @staticmethod

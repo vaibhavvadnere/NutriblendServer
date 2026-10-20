@@ -20,7 +20,7 @@ from app.providers.sms import current_provider_name
 from app.providers.storage import get_storage
 from app.routers import admin, admin_accounts, admin_auth, admin_payments, admin_videos, auth, legal, media, payments, users, videos
 from app.schemas.common import ok
-from app.services import document_service, optimizer, rate_limiter, video_service
+from app.services import document_service, optimizer, payment_reconcile_service, rate_limiter, video_service
 from app.utils.network import lan_ip
 
 logging.basicConfig(
@@ -49,13 +49,17 @@ async def lifespan(app: FastAPI):
         worker = asyncio.create_task(optimizer.worker_loop(), name="video-optimizer")
     elif settings.VIDEO_OPTIMIZE_ENABLED:
         logger.warning("Video optimization is on but ffmpeg/ffprobe are not installed: videos are stored as uploaded.")
+    reconciler = None
+    if payment_reconcile_service.active():
+        reconciler = asyncio.create_task(payment_reconcile_service.worker_loop(), name="payment-reconcile")
     yield
-    if worker:
-        worker.cancel()
-        try:
-            await worker
-        except asyncio.CancelledError:
-            pass
+    for task in (worker, reconciler):
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     await database.close()
 
 

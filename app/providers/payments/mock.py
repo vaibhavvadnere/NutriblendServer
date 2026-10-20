@@ -58,6 +58,10 @@ class MockPaymentProvider(PaymentProvider):
             raise PaymentProviderError("The id provided does not exist", "BAD_REQUEST_ERROR")
         return payment
 
+    async def fetch_order_payments(self, order_id: str) -> list[dict[str, Any]]:
+        self._maybe_fail()
+        return [p for p in self.payments.values() if p["order_id"] == order_id]
+
     # ── Test helpers ─────────────────────────────────────────────────────────
 
     def pay(self, order_id: str, status: str = "captured") -> tuple[str, str]:
