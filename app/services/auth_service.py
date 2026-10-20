@@ -64,7 +64,7 @@ from app.schemas.auth import (
     OTPSentResponse,
     TokenResponse,
 )
-from app.services import rate_limiter, token_service, user_service
+from app.services import rate_limiter, subscription_service, token_service, user_service
 from app.utils.phone import mask
 
 logger = logging.getLogger("nutriblend.auth")
@@ -359,6 +359,9 @@ async def _confirm_account_deletion(mobile_number: str, otp: str, ip: str) -> De
     # Everything that could still act as this user has to go.
     await otp_repo.delete(record["_id"])
     await token_service.revoke_all_for_user(mobile_number, reason="account_deleted")
+    # Paid access ends with the account. Payment records stay (accounting,
+    # refund disputes); only the subscription is closed.
+    await subscription_service.end_now(deleted["_id"], "account_deleted")
 
     logger.warning("Account deleted for %s from %s", mask(mobile_number), ip)
     return DeleteAccountResponse(

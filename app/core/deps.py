@@ -14,7 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import settings
 from app.core.errors import APIError, ErrorCode
-from app.core.exceptions import AccountGone, AdminCreateDisabled, AdminOnly
+from app.core.exceptions import AccountGone, AdminCreateDisabled, AdminOnly, SubscriptionRequired
 from app.core.security import (
     SCOPE_ADMIN,
     SCOPE_APP,
@@ -23,7 +23,7 @@ from app.core.security import (
     decode_access_claims,
     decode_upload_ticket,
 )
-from app.services import user_service
+from app.services import subscription_service, user_service
 from app.utils.phone import InvalidMobileNumber, normalize_mobile
 
 logger = logging.getLogger("nutriblend.auth")
@@ -69,6 +69,20 @@ async def get_current_user(
             "Dashboard sessions cannot be used in the app. Please sign in through the app.",
             {"required_session": SCOPE_APP},
         )
+    return user
+
+
+async def require_subscription(user: dict = Depends(get_current_user)) -> dict:
+    """
+    App content behind the paywall. Only enforced while PAYMENTS_LOCK_VIDEOS is on
+    (off by default); then the user needs an active subscription — bought, or
+    granted by an admin — else 403 SUBSCRIPTION_REQUIRED. Admin accounts using
+    the app are never locked out.
+    """
+    if not settings.PAYMENTS_LOCK_VIDEOS or user_service.is_admin_account(user):
+        return user
+    if not await subscription_service.has_active(user["_id"]):
+        raise SubscriptionRequired()
     return user
 
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import streamlit as st
 
-from dashboard.pages import overview, privacy, user_detail, users, video_detail, video_upload, videos
+from dashboard.pages import overview, payments, plans, privacy, user_detail, users, video_detail, video_upload, videos
 
 
 @dataclass(frozen=True)
@@ -23,10 +23,12 @@ class Pages:
     video_upload: st.Page
     video_detail: st.Page
     privacy: st.Page
+    plans: st.Page
+    payments: st.Page
 
     def menu(self) -> list:
-        return [self.overview, self.users, self.videos, self.video_upload, self.privacy,
-                self.user_detail, self.video_detail]
+        return [self.overview, self.users, self.videos, self.video_upload, self.plans, self.payments,
+                self.privacy, self.user_detail, self.video_detail]
 
 
 _KEY = "_nav_pages"
@@ -47,7 +49,7 @@ def track(page) -> None:
 def pages() -> Pages:
     """The Page objects registered with st.navigation in this run."""
     cached = st.session_state.get(_KEY)
-    if not isinstance(cached, Pages) or not hasattr(cached, "privacy"):  # rebuilt after an app update
+    if not isinstance(cached, Pages) or not hasattr(cached, "payments"):  # rebuilt after an app update
         st.session_state[_KEY] = Pages(
             overview=st.Page(overview.render, title="Dashboard", icon=":material/dashboard:", url_path="dashboard", default=True),
             users=st.Page(users.render, title="Users", icon=":material/group:", url_path="users"),
@@ -57,5 +59,7 @@ def pages() -> Pages:
             video_upload=st.Page(video_upload.render, title="Upload video", icon=":material/upload:", url_path="upload"),
             video_detail=st.Page(video_detail.render, title="Video", icon=":material/movie:", url_path="video", visibility="hidden"),
             privacy=st.Page(privacy.render, title="Privacy policy", icon=":material/policy:", url_path="privacy"),
+            plans=st.Page(plans.render, title="Plans", icon=":material/sell:", url_path="plans"),
+            payments=st.Page(payments.render, title="Payments", icon=":material/payments:", url_path="payments"),
         )
     return st.session_state[_KEY]

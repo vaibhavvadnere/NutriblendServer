@@ -56,6 +56,13 @@ class ErrorCode:
     REFRESH_TOKEN_INVALID = "REFRESH_TOKEN_INVALID"
     REFRESH_TOKEN_REUSED = "REFRESH_TOKEN_REUSED"
     RATE_LIMITED = "RATE_LIMITED"
+    PAYMENTS_DISABLED = "PAYMENTS_DISABLED"
+    PLAN_NOT_FOUND = "PLAN_NOT_FOUND"
+    ORDER_NOT_FOUND = "ORDER_NOT_FOUND"
+    PAYMENT_VERIFICATION_FAILED = "PAYMENT_VERIFICATION_FAILED"
+    PAYMENT_PENDING = "PAYMENT_PENDING"
+    PAYMENT_PROVIDER_ERROR = "PAYMENT_PROVIDER_ERROR"
+    SUBSCRIPTION_REQUIRED = "SUBSCRIPTION_REQUIRED"
     NOT_FOUND = "NOT_FOUND"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -303,3 +310,47 @@ class RateLimited(DomainError):
         super().__init__(message, details={"retry_after_seconds": retry_after})
         self.retry_after = retry_after
         self.scope = scope
+
+
+# ── Payments ─────────────────────────────────────────────────────────────────
+
+class PaymentsDisabled(DomainError):
+    """PAYMENTS_ENABLED is off — the endpoints behave as if they don't exist."""
+    code = ErrorCode.PAYMENTS_DISABLED
+    message = "Payments are not available right now."
+
+
+class PlanNotFound(DomainError):
+    code = ErrorCode.PLAN_NOT_FOUND
+    message = "That plan is not available."
+
+
+class OrderNotFound(DomainError):
+    """Unknown order — or another user's: we never confirm which, so order ids
+    can't be probed."""
+    code = ErrorCode.ORDER_NOT_FOUND
+    message = "We couldn't find that payment."
+
+
+class PaymentVerificationFailed(DomainError):
+    """Bad signature, amount/order mismatch, or the payment did not succeed."""
+    code = ErrorCode.PAYMENT_VERIFICATION_FAILED
+    message = "We couldn't verify this payment. If money was deducted, it will be refunded automatically."
+
+
+class PaymentPending(DomainError):
+    """Paid but not yet captured. Razorpay's webhook finishes it; the app should
+    check GET /users/me/subscription again shortly."""
+    code = ErrorCode.PAYMENT_PENDING
+    message = "Your payment is being confirmed. Please check again in a minute."
+
+
+class PaymentProviderUnavailable(DomainError):
+    code = ErrorCode.PAYMENT_PROVIDER_ERROR
+    message = "The payment service is not responding. Please try again."
+
+
+class SubscriptionRequired(DomainError):
+    code = ErrorCode.SUBSCRIPTION_REQUIRED
+    message = "Subscribe to watch this content."
+

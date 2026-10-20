@@ -1,0 +1,66 @@
+<!doctype html>
+<!--
+  scripts/razorpay_checkout_test.html — DEVELOPMENT ONLY.
+
+  Opens real Razorpay Checkout (TEST mode) for an order created by
+  POST /api/v1/payments/orders, then shows the exact JSON to send to
+  POST /api/v1/payments/verify. Lets you test the whole server flow before the
+  Android app is wired up. Contains no keys or secrets: you paste the public
+  Key ID and the order id from the /orders response.
+
+  Open it straight from Finder (double-click). Only ever use rzp_test_ keys here.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Razorpay test checkout</title>
+<style>
+  :root { --fg:#1a1c1c; --muted:#5b6157; --bg:#f6f7f5; --card:#fff; --accent:#154212; --bad:#ba1a1a; }
+  body { font: 15px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; padding: 24px 16px; }
+  main { max-width: 640px; margin: 0 auto; background: var(--card); border-radius: 14px; padding: 24px; box-shadow: 0 1px 4px #0001; }
+  h1 { font-size: 20px; margin: 0 0 4px; } p.note { color: var(--muted); margin: 0 0 20px; }
+  label { display: block; font-weight: 600; margin: 14px 0 4px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #c2c9bb; border-radius: 8px; font: inherit; }
+  button { margin-top: 18px; background: var(--accent); color: #fff; border: 0; border-radius: 999px; padding: 12px 22px; font-weight: 700; cursor: pointer; }
+  pre { background: #f0f2ee; padding: 12px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
+  .bad { color: var(--bad); font-weight: 600; }
+</style>
+<script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+<main>
+  <h1>Razorpay test checkout</h1>
+  <p class="note">Paste <code>key_id</code>, <code>order_id</code> and <code>amount</code> from the <code>POST /payments/orders</code> response, then pay with a Razorpay test card or test UPI.</p>
+  <label for="key">key_id</label><input id="key" placeholder="rzp_test_…">
+  <label for="order">order_id</label><input id="order" placeholder="order_…">
+  <label for="amount">amount (paise)</label><input id="amount" placeholder="19900" inputmode="numeric">
+  <button id="pay">Open checkout</button>
+  <div id="out"></div>
+</main>
+<script>
+  const out = document.getElementById("out");
+  function show(html) { out.innerHTML = html; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+  document.getElementById("pay").onclick = () => {
+    const key = document.getElementById("key").value.trim();
+    const order = document.getElementById("order").value.trim();
+    const amount = parseInt(document.getElementById("amount").value.trim(), 10);
+    if (!key.startsWith("rzp_test_")) { show('<p class="bad">Use a TEST key (rzp_test_…) only.</p>'); return; }
+    if (!order || !amount) { show('<p class="bad">Fill in order_id and amount.</p>'); return; }
+    const rzp = new Razorpay({
+      key, order_id: order, amount, currency: "INR", name: "Nutriblend (test)",
+      theme: { color: "#154212" },
+      handler: (r) => {
+        const body = { razorpay_order_id: order, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature };
+        show("<p><strong>Paid.</strong> Send this to <code>POST /api/v1/payments/verify</code> (with the same user's token):</p><pre>" +
+             esc(JSON.stringify(body, null, 2)) + "</pre>");
+      },
+      modal: { ondismiss: () => show("<p>Checkout closed without paying.</p>") },
+    });
+    rzp.on("payment.failed", (r) => show('<p class="bad">Payment failed: ' + esc(r.error && r.error.description) + "</p>"));
+    rzp.open();
+  };
+</script>
+</body>
+</html>

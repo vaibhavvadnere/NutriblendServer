@@ -62,3 +62,10 @@ def fmt_duration(seconds: Optional[float]) -> str:
     hours, rest = divmod(total, 3600)
     minutes, secs = divmod(rest, 60)
     return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def fmt_rupees(paise: Optional[int]) -> str:
+    """19900 -> '₹199', 19950 -> '₹199.50'."""
+    if paise is None:
+        return "—"
+    return f"₹{paise // 100:,}" if paise % 100 == 0 else f"₹{paise / 100:,.2f}"

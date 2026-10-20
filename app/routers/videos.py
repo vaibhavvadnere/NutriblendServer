@@ -4,6 +4,11 @@ routers/videos.py — Videos for the mobile app (app session required).
 Only *published* videos are visible. Each comes with signed `playback_url` and
 `thumbnail_url` links that expire (MEDIA_URL_TTL_SECONDS); re-fetch the video
 for fresh links.
+
+While PAYMENTS_LOCK_VIDEOS is on, the list, a video and its document need an
+active subscription (403 SUBSCRIPTION_REQUIRED). Categories stay open so the app
+can still show what's on offer. Media links are only ever handed out by these
+endpoints and expire, so locking them locks playback too.
 """
 
 from typing import Optional
@@ -11,7 +16,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.config import settings
-from app.core.deps import get_current_user, public_base_url
+from app.core.deps import get_current_user, public_base_url, require_subscription
 from app.schemas.common import ERROR_RESPONSES, ApiResponse, ok
 from app.schemas.video import CategoryList, DocumentPages, VideoOut, VideoPage
 from app.services import document_service, video_service
@@ -24,7 +29,7 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=ApiResponse[VideoPage])
+@router.get("", response_model=ApiResponse[VideoPage], dependencies=[Depends(require_subscription)])
 async def list_videos(
     request: Request,
     category: Optional[str] = Query(default=None, max_length=40),
@@ -41,13 +46,13 @@ async def list_categories():
     return ok(CategoryList(categories=await video_service.categories(published_only=True)), "Categories fetched")
 
 
-@router.get("/{video_id}", response_model=ApiResponse[VideoOut])
+@router.get("/{video_id}", response_model=ApiResponse[VideoOut], dependencies=[Depends(require_subscription)])
 async def get_video(video_id: str, request: Request):
     """One published video (404 for drafts or unknown ids)."""
     return ok(await video_service.get_published(video_id, public_base_url(request)), "Video fetched successfully")
 
 
-@router.get("/{video_id}/document", response_model=ApiResponse[DocumentPages])
+@router.get("/{video_id}/document", response_model=ApiResponse[DocumentPages], dependencies=[Depends(require_subscription)])
 async def get_document(video_id: str, request: Request):
     """
     The video's document as **page images** (view-only — the original file is

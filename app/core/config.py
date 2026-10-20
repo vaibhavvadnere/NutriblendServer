@@ -256,6 +256,30 @@ class Settings(BaseSettings):
     FAST2SMS_SENDER_ID: Optional[str] = None
     FAST2SMS_MESSAGE_ID: Optional[str] = None  # required when FAST2SMS_ROUTE="dlt"
 
+    # ── Payments (Razorpay) ──────────────────────────────────────────────────
+    # Master switch. Off = every /payments endpoint answers 404 PAYMENTS_DISABLED
+    # and subscriptions are never required. NOTE: selling in-app digital content
+    # through Razorpay alone breaks Google Play's payments policy — keep this off
+    # in production until the billing decision (Play Billing alongside / sell
+    # outside the app) is made.
+    PAYMENTS_ENABLED: bool = False
+    # "razorpay" talks to Razorpay; "mock" fakes it (tests / local runs without keys).
+    PAYMENT_PROVIDER: Literal["mock", "razorpay"] = "mock"
+    PAYMENTS_CURRENCY: str = "INR"
+    # When true, /videos needs an active subscription (403 SUBSCRIPTION_REQUIRED).
+    # Separate from PAYMENTS_ENABLED so payments can be tested before anything is locked.
+    PAYMENTS_LOCK_VIDEOS: bool = False
+
+    # Razorpay (https://dashboard.razorpay.com → Account & Settings → API Keys).
+    # Test keys start with rzp_test_, live keys with rzp_live_. The KEY SECRET and
+    # WEBHOOK SECRET never leave the server; only the KEY ID is sent to the app.
+    RAZORPAY_KEY_ID: Optional[str] = None
+    RAZORPAY_KEY_SECRET: Optional[str] = None
+    # Set when creating the webhook (Razorpay → Webhooks); verifies X-Razorpay-Signature.
+    RAZORPAY_WEBHOOK_SECRET: Optional[str] = None
+    RAZORPAY_API_BASE: str = "https://api.razorpay.com/v1"
+    RAZORPAY_TIMEOUT_SECONDS: float = 15.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

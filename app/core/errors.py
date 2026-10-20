@@ -68,6 +68,13 @@ from app.core.exceptions import (
     RateLimited,
     RefreshTokenInvalid,
     RefreshTokenReused,
+    PaymentsDisabled,
+    PlanNotFound,
+    OrderNotFound,
+    PaymentVerificationFailed,
+    PaymentPending,
+    PaymentProviderUnavailable,
+    SubscriptionRequired,
 )
 
 __all__ = ["APIError", "ErrorCode", "error_body", "register_error_handlers", "status_for"]
@@ -112,6 +119,13 @@ _DOMAIN_STATUS: dict[type[DomainError], int] = {
     RefreshTokenInvalid: status.HTTP_401_UNAUTHORIZED,
     RefreshTokenReused: status.HTTP_401_UNAUTHORIZED,
     RateLimited: status.HTTP_429_TOO_MANY_REQUESTS,
+    PaymentsDisabled: status.HTTP_404_NOT_FOUND,
+    PlanNotFound: status.HTTP_404_NOT_FOUND,
+    OrderNotFound: status.HTTP_404_NOT_FOUND,
+    PaymentVerificationFailed: status.HTTP_400_BAD_REQUEST,
+    PaymentPending: status.HTTP_409_CONFLICT,
+    PaymentProviderUnavailable: status.HTTP_502_BAD_GATEWAY,
+    SubscriptionRequired: status.HTTP_403_FORBIDDEN,
 }
 
 

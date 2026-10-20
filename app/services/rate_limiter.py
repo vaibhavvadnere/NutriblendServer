@@ -130,6 +130,27 @@ def otp_verify_rules(ip: str) -> tuple[Rule, ...]:
     )
 
 
+def payment_order_rules(user_id: str, ip: str) -> tuple[Rule, ...]:
+    """Limits for POST /payments/orders — every call creates an order at Razorpay,
+    so a script must not be able to hammer it through our credentials."""
+    return (
+        Rule(
+            scope="payment_order_user_hour",
+            identifier=user_id,
+            limit=20,
+            window_seconds=3600,
+            message="Too many payment attempts. Please try again later.",
+        ),
+        Rule(
+            scope="payment_order_ip_hour",
+            identifier=ip,
+            limit=60,
+            window_seconds=3600,
+            message="Too many payment attempts from this device. Please try again later.",
+        ),
+    )
+
+
 async def reset_for(scope: str, identifier: str) -> None:
     """Clear a counter early — used after a successful login so a legitimate
     user isn't held to the cooldown from their own sign-in attempt."""

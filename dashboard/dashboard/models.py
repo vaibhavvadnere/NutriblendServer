@@ -227,3 +227,72 @@ class VideoPage(_Model):
     page: int
     page_size: int
     pages: int
+
+
+# ── Payments ─────────────────────────────────────────────────────────────────
+
+class Plan(_Model):
+    id: str
+    name: str
+    description: Optional[str] = None
+    amount: int  # paise
+    currency: str = "INR"
+    duration_days: int
+    active: bool = True
+    sort_order: int = 0
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+class PaymentOrder(_Model):
+    id: str
+    user_id: str
+    mobile_number: Optional[str] = None
+    plan_id: str
+    plan_name: str
+    duration_days: int
+    amount: int
+    currency: str = "INR"
+    razorpay_order_id: str
+    razorpay_payment_id: Optional[str] = None
+    status: Literal["created", "paid", "failed", "refunded"]
+    paid_via: Optional[str] = None
+    failure_reason: Optional[str] = None
+    created_at: datetime
+    paid_at: Optional[datetime] = None
+    refunded_at: Optional[datetime] = None
+
+
+class PaymentOrderPage(_Model):
+    items: list[PaymentOrder]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class Subscription(_Model):
+    is_active: bool = False
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    started_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    days_left: int = 0
+
+
+class SubscriptionHistoryItem(_Model):
+    at: datetime
+    action: str
+    days: Optional[int] = None
+    source: Optional[str] = None
+    order_id: Optional[str] = None
+    reason: Optional[str] = None
+    by: Optional[str] = None
+    note: Optional[str] = None
+
+
+class UserSubscription(_Model):
+    subscription: Subscription
+    source: Optional[str] = None
+    ended_reason: Optional[str] = None
+    history: list[SubscriptionHistoryItem] = []

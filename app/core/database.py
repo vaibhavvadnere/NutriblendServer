@@ -46,6 +46,13 @@ rate_limits_collection = db["rate_limits"]
 videos_collection = db["videos"]
 # Multipart uploads in progress (R2 storage only): upload id + first bytes.
 storage_uploads_collection = db["storage_uploads"]
+# Payments: plans on sale, Razorpay orders (one per checkout attempt), and each
+# user's subscription (one document per user, extended on every purchase).
+plans_collection = db["plans"]
+payment_orders_collection = db["payment_orders"]
+subscriptions_collection = db["subscriptions"]
+# Razorpay webhook deliveries already processed (de-duplication + audit trail).
+payment_events_collection = db["payment_events"]
 
 
 def describe_connection() -> str:
@@ -111,6 +118,22 @@ async def init_indexes() -> None:
     await storage_uploads_collection.create_index("expires_at", expireAfterSeconds=0)
     # Documents left half-prepared by a restart are found by this.
     await videos_collection.create_index("document.status", sparse=True)
+
+    # Payments. Unique Razorpay ids are the real guard against counting one
+    # payment twice (verify + webhook racing, or a webhook delivered twice).
+    await plans_collection.create_index([("active", 1), ("sort_order", 1)])
+    await payment_orders_collection.create_index("razorpay_order_id", unique=True)
+    await payment_orders_collection.create_index("razorpay_payment_id", unique=True, sparse=True)
+    await payment_orders_collection.create_index([("user_id", 1), ("created_at", -1)])
+    await payment_orders_collection.create_index([("status", 1), ("created_at", -1)])
+    # Keyed by the user's _id, not the mobile number: account deletion renames the number.
+    await subscriptions_collection.create_index("user_id", unique=True)
+    await subscriptions_collection.create_index("expires_at")
+    # Razorpay retries a webhook until it gets a 2xx, and may deliver one twice.
+    await payment_events_collection.create_index("event_id", unique=True)
+    await payment_events_collection.create_index([("razorpay_order_id", 1), ("received_at", -1)])
+    # Keep the audit trail for a year, then let Mongo clean it up.
+    await payment_events_collection.create_index("received_at", expireAfterSeconds=365 * 24 * 3600)
 
     # Rate-limit counters expire themselves, so the collection stays small
     # without any cleanup job.
