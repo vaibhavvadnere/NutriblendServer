@@ -63,7 +63,7 @@ def mongo(monkeypatch):
     from mongomock_motor import AsyncMongoMockClient
 
     from app.core import database
-    from app.repositories import favourite_repo, video_repo
+    from app.repositories import favourite_repo, video_repo, watch_repo
 
     db = AsyncMongoMockClient()["nutriblend_test"]
     monkeypatch.setattr(database, "db", db)
@@ -71,6 +71,7 @@ def mongo(monkeypatch):
     monkeypatch.setattr(database, "storage_uploads_collection", db["storage_uploads"])
     monkeypatch.setattr(video_repo, "videos_collection", db["videos"])
     monkeypatch.setattr(favourite_repo, "favourites_collection", db["favourites"])   # deleting a video cleans these up
+    monkeypatch.setattr(watch_repo, "watch_history_collection", db["watch_history"])  # and these
     return db
 
 

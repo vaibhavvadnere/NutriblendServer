@@ -55,6 +55,7 @@ subscriptions_collection = db["subscriptions"]
 payment_events_collection = db["payment_events"]
 # Videos a user marked as favourite: one document per (user, video).
 favourites_collection = db["favourites"]
+watch_history_collection = db["watch_history"]
 
 
 def describe_connection() -> str:
@@ -141,6 +142,16 @@ async def init_indexes() -> None:
     await favourites_collection.create_index([("user_id", 1), ("video_id", 1)], unique=True)
     await favourites_collection.create_index([("user_id", 1), ("created_at", -1)])
     await favourites_collection.create_index("video_id")
+
+    # Watch history: one row per (user, video). Unique pair is the real guard
+    # against two simultaneous "play" posts creating duplicates.
+    await watch_history_collection.create_index(
+        [("user_id", 1), ("video_id", 1)], unique=True, name="watch_user_video_unique"
+    )
+    # The user's history, newest first.
+    await watch_history_collection.create_index([("user_id", 1), ("last_watched_at", -1)])
+    # Per-video ranking, and clean-up when a video is deleted.
+    await watch_history_collection.create_index("video_id")
 
     # Rate-limit counters expire themselves, so the collection stays small
     # without any cleanup job.

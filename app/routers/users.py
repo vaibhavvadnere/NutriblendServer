@@ -11,7 +11,8 @@ from app.core.deps import get_current_user, require_admin
 from app.schemas.admin import AdminUserList
 from app.schemas.common import ERROR_RESPONSES, ApiResponse, ok
 from app.schemas.user import UserCreate, UserOut, UserUpdate
-from app.services import admin_service, user_service
+from app.schemas.video import UserStats
+from app.services import admin_service, favourite_service, user_service, watch_service
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/users", tags=["users"], responses=ERROR_RESPONSES
@@ -62,6 +63,39 @@ async def update_me(payload: UserUpdate, current_user: dict = Depends(get_curren
         current_user["mobile_number"], payload.name, payload.email, payload.state
     )
     return ok(user_service.to_user_out(updated), "Profile updated successfully")
+
+
+@router.get("/me/stats", response_model=ApiResponse[UserStats])
+async def my_stats(current_user: dict = Depends(get_current_user)):
+    """
+    Everything the profile screen needs, in one call: the ♡ count and the
+    watched count.
+
+    ```
+    {
+      "favourites": { "count": 12, "visible_count": 10, "limit": 500 },
+      "watched":    { "videos_count": 14, "total_plays": 37 }
+    }
+    ```
+
+    - `favourites.count` — every video the user hearted; what `limit` applies to.
+    - `favourites.visible_count` — how many of those the app can show right now
+      (an unpublished video stays hearted but drops out of the list). Use this
+      for the tab badge so the number matches what they will see.
+    - `watched.videos_count` — **different** videos played; replaying one does
+      not raise it.
+    - `watched.total_plays` — every play added up.
+
+    No subscription required: these are numbers, not videos, so a user who is
+    locked out still sees their counts.
+    """
+    return ok(
+        UserStats(
+            favourites=await favourite_service.stats_for_user(current_user["_id"]),
+            watched=await watch_service.stats_for_user(current_user["_id"]),
+        ),
+        "Stats fetched successfully",
+    )
 
 
 @router.post(

@@ -257,6 +257,92 @@ class FavouriteStatus(BaseModel):
     favourites_limit: int
 
 
+class FavouritesStats(BaseModel):
+    """The ♡ numbers inside GET /users/me/stats.
+
+    Two counts, because they can legitimately differ: a video that is
+    unpublished stays in the user's favourites but drops out of the list. A
+    badge showing `count` while the list shows fewer items looks like a bug,
+    so the app is given both and can pick.
+    """
+    #: Every favourite the user holds. Matches `favourites_count` on the
+    #: add/remove response, and is what `limit` applies to.
+    count: int
+    #: How many of those the app can currently show — i.e. the `total` that
+    #: GET /users/me/favourites would return.
+    visible_count: int
+    #: Most favourites a user may keep.
+    limit: int
+
+
+class WatchStatus(BaseModel):
+    """Answer to recording a play."""
+    video_id: str
+    #: How many times this user has played THIS video.
+    play_count: int
+    #: How many different videos the user has played — the app's "watched" number.
+    watched_videos_count: int
+
+
+class WatchStats(BaseModel):
+    """The watch numbers inside GET /users/me/stats."""
+    #: Different videos played. Replaying one does not increase it.
+    videos_count: int
+    #: Every play added up, across all videos.
+    total_plays: int
+
+
+class UserStats(BaseModel):
+    """GET /users/me/stats — everything the profile screen needs, in one call.
+
+    Grouped rather than flat so another block (e.g. downloads) can be added
+    later without the field names becoming ambiguous.
+    """
+    favourites: FavouritesStats
+    watched: WatchStats
+
+
+class WatchedVideo(BaseModel):
+    """One row of a user's watch history (admin view)."""
+    video_id: str
+    title: Optional[str] = None
+    category: Optional[str] = None
+    #: None when the video has since been deleted.
+    status: Optional[str] = None
+    play_count: int
+    first_watched_at: datetime
+    last_watched_at: datetime
+
+
+class WatchedVideoPage(BaseModel):
+    items: list[WatchedVideo]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
+class MostWatchedVideo(BaseModel):
+    """One row of the dashboard's most-watched ranking."""
+    video_id: str
+    title: Optional[str] = None
+    category: Optional[str] = None
+    status: Optional[str] = None
+    #: Different people who played it — what the ranking sorts by.
+    viewers: int
+    #: Every play added up. One enthusiast can make this much bigger than viewers.
+    plays: int
+    last_watched_at: Optional[datetime] = None
+
+
+class MostWatchedPage(BaseModel):
+    items: list[MostWatchedVideo]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
 class ReplacementInfo(BaseModel):
     """A new file being uploaded to replace this video's file (the old file keeps playing meanwhile)."""
     #: The unfinished upload (an `uploading` video record): GET it for progress, resume it with its tickets.

@@ -272,6 +272,15 @@ class Settings(BaseSettings):
 
     # ── Favourites ───────────────────────────────────────────────────────────
     # Most videos one user can keep as favourites (stops a script filling the DB).
+    # ── Watch history ────────────────────────────────────────────────────────
+    # Two plays of the same video closer together than this count as one.
+    # Guards the number against the app re-posting after a seek, a re-buffer,
+    # a rotation or a quick back-and-forward — all of which are one viewing.
+    WATCH_DEDUPE_SECONDS: int = 300
+    # Ceiling on "play" posts per user per hour. Generous for real viewing,
+    # tight enough that the counts cannot be inflated at scale.
+    WATCH_MAX_PLAYS_PER_HOUR: int = 200
+
     FAVOURITES_MAX_PER_USER: int = 500
     # Add/remove taps per user per hour (generous: a person tapping hearts never gets near it).
     FAVOURITES_MAX_CHANGES_PER_HOUR: int = 300

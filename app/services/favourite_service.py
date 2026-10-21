@@ -27,7 +27,7 @@ from bson import ObjectId
 from app.core.config import settings
 from app.core.exceptions import FavouritesLimitReached, VideoNotFound
 from app.repositories import favourite_repo, video_repo
-from app.schemas.video import FavouriteStatus, VideoOut, VideoPage
+from app.schemas.video import FavouriteStatus, FavouritesStats, VideoOut, VideoPage
 from app.services import rate_limiter, video_service
 
 logger = logging.getLogger("nutriblend.favourites")
@@ -90,6 +90,24 @@ async def list_for_user(user_id: ObjectId, page: int, page_size: int, base_url: 
         items.append(out)
     return VideoPage(items=items, total=total, page=page, page_size=page_size,
                      pages=max(math.ceil(total / page_size), 1))
+
+
+async def stats_for_user(user_id: ObjectId) -> FavouritesStats:
+    """
+    The two favourite counts, without touching video documents or minting any
+    playback links — cheap enough to call on every app launch.
+    """
+    total = await favourite_repo.count_for_user(user_id)
+    visible = 0
+    if total:
+        visible = await video_repo.count_visible_by_ids(
+            await favourite_repo.video_ids_for_user(user_id)
+        )
+    return FavouritesStats(
+        count=total,
+        visible_count=visible,
+        limit=settings.FAVOURITES_MAX_PER_USER,
+    )
 
 
 async def mark(user_id: ObjectId, videos: list[VideoOut]) -> None:

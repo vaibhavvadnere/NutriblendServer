@@ -231,6 +231,24 @@ async def find_visible_by_ids(video_ids: list[ObjectId]) -> list[dict]:
     return [doc async for doc in videos_collection.find(filters)]
 
 
+async def find_by_ids(video_ids: list[ObjectId]) -> list[dict]:
+    """The videos among `video_ids`, whatever their status — admin views need
+    drafts and unpublished ones too, unlike find_visible_by_ids."""
+    if not video_ids:
+        return []
+    return [doc async for doc in videos_collection.find({"_id": {"$in": video_ids}})]
+
+
+async def count_visible_by_ids(video_ids: list[ObjectId]) -> int:
+    """How many of `video_ids` the app may show. Counts server-side rather than
+    fetching the documents, which is the whole point of the count endpoint."""
+    if not video_ids:
+        return 0
+    filters: dict[str, Any] = visible_filter()
+    filters["_id"] = {"$in": video_ids}
+    return await videos_collection.count_documents(filters)
+
+
 async def categories(published_only: bool) -> list[str]:
     filters: dict[str, Any] = {"category": {"$nin": [None, ""]}}
     if published_only:

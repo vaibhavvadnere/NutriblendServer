@@ -25,11 +25,13 @@ def fav(monkeypatch):
     from app.core.config import settings
     from app.repositories import (
         favourite_repo, otp_repo, rate_limit_repo, refresh_token_repo, subscription_repo, user_repo, video_repo,
+        watch_repo,
     )
 
     db = AsyncMongoMockClient()["favourites_test"]
     for module, attr, name in [
         (favourite_repo, "favourites_collection", "favourites"),
+        (watch_repo, "watch_history_collection", "watch_history"),
         (video_repo, "videos_collection", "videos"),
         (user_repo, "users_collection", "users"),
         (otp_repo, "otps_collection", "otps"),
@@ -83,6 +85,10 @@ def fav(monkeypatch):
 
         def mine(self, headers=None, **params):
             return self.client.get("/api/v1/users/me/favourites", headers=headers or self.user, params=params)
+
+        def counts(self, headers=None):
+            """The ♡ block of the combined stats endpoint."""
+            return self.client.get("/api/v1/users/me/stats", headers=headers or self.user)
 
         def count(self, **query):
             return asyncio.run(db["favourites"].count_documents(query))
@@ -245,3 +251,66 @@ def test_deleting_the_account_deletes_its_favourites(fav):
     step2 = fav.client.post("/api/v1/auth/delete-account", json={"mobile_number": USER_MOBILE, "otp": otp})
     assert step2.json()["data"]["deleted"] is True
     assert fav.count() == 1                                             # only the other user's is left
+
+
+# ── The count endpoint ───────────────────────────────────────────────────────
+
+def test_count_is_zero_for_a_new_user(fav):
+    r = fav.counts()
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["favourites"] == {"count": 0, "visible_count": 0, "limit": 500}
+
+
+def test_count_tracks_adds_and_removes(fav):
+    a, b = fav.video("A"), fav.video("B")
+    fav.add(a); fav.add(b)
+    assert fav.counts().json()["data"]["favourites"]["count"] == 2
+    assert fav.counts().json()["data"]["favourites"]["visible_count"] == 2
+
+    fav.remove(a)
+    data = fav.counts().json()["data"]["favourites"]
+    assert data["count"] == 1 and data["visible_count"] == 1
+
+
+def test_count_agrees_with_the_add_response(fav):
+    v = fav.video()
+    added = fav.add(v).json()["data"]
+    assert fav.counts().json()["data"]["favourites"]["count"] == added["favourites_count"]
+    assert fav.counts().json()["data"]["favourites"]["limit"] == added["favourites_limit"]
+
+
+def test_unpublished_favourite_is_kept_but_not_visible(fav):
+    """The two counts exist precisely for this case."""
+    a, b = fav.video("A"), fav.video("B")
+    fav.add(a); fav.add(b)
+    asyncio.run(fav.database["videos"].update_one({"title": "A"}, {"$set": {"status": "draft"}}))
+
+    data = fav.counts().json()["data"]["favourites"]
+    assert data["count"] == 2, "the favourite itself is kept"
+    assert data["visible_count"] == 1, "but the app can only show one"
+    assert data["visible_count"] == fav.mine().json()["data"]["total"], "must match the list"
+
+
+def test_count_is_per_user(fav):
+    v = fav.video()
+    fav.add(v)
+    assert fav.counts().json()["data"]["favourites"]["count"] == 1
+    assert fav.counts(headers=fav.other).json()["data"]["favourites"]["count"] == 0
+
+
+def test_count_needs_a_signed_in_app_user(fav):
+    assert fav.client.get("/api/v1/users/me/stats").status_code == 401
+    r = fav.counts(headers=fav.admin)       # an admin-scope session is the wrong type here
+    assert r.status_code == 403 and r.json()["error"]["code"] == "WRONG_SESSION_TYPE", r.text
+
+
+def test_count_works_without_a_subscription(fav, monkeypatch):
+    """The list is locked behind a subscription; the badge must not be."""
+    v = fav.video()
+    fav.add(v)
+    monkeypatch.setattr(fav.settings_, "PAYMENTS_LOCK_VIDEOS", True)
+
+    assert fav.mine().status_code == 403, "the list still requires a subscription"
+    r = fav.counts()
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["favourites"]["count"] == 1

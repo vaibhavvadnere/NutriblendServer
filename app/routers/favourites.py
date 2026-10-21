@@ -5,6 +5,9 @@ routers/favourites.py — The ♡ in the app (app session required).
     DELETE /videos/{video_id}/favourite   remove (idempotent)
     GET    /users/me/favourites           my favourites, newest first
 
+The ♡ count lives on GET /users/me/stats together with the watch count, so
+the profile screen needs one call rather than two.
+
 Adding / removing works even while videos are locked behind a subscription.
 The list hands out playback links, so it needs a subscription exactly like
 GET /videos (only while PAYMENTS_LOCK_VIDEOS is on).

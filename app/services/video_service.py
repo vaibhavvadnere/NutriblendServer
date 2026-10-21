@@ -52,7 +52,7 @@ from app.core.exceptions import (
 )
 from app.providers.storage import StorageError, get_staging_storage, get_storage
 from app.providers.storage.base import ChecksumMismatch
-from app.repositories import favourite_repo, video_repo
+from app.repositories import favourite_repo, video_repo, watch_repo
 from app.services import document_service, optimizer
 from app.schemas.video import (
     ALLOWED_IMAGE_TYPES,
@@ -1052,6 +1052,7 @@ async def delete_video(video_id: str) -> None:
     doc = await _get(video_id)
     await video_repo.delete(doc["_id"])
     await favourite_repo.delete_for_video(doc["_id"])   # nobody can keep a favourite of a video that is gone
+    await watch_repo.delete_for_video(doc["_id"])       # and no history of watching one either
     await _delete_files(doc)
     await _forget_replacement(doc)                      # deleting an unfinished replacement cancels it
     pending = doc.get("replacement")
