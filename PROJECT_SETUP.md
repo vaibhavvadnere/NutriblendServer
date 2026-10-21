@@ -404,6 +404,20 @@ Previous smoke test (2026-09-21, 39 checks, all passed):
 
 ## 10. Change log
 
+- **2026-10-21 (favourites)** — **Users can mark videos as favourite.** New `favourites`
+  collection (one document per user + video; unique `(user_id, video_id)` index, plus
+  `(user_id, created_at)` and `video_id`). Endpoints (app session): `PUT` / `DELETE
+  /api/v1/videos/{id}/favourite` (idempotent; answer `{video_id, is_favourite, favourites_count,
+  favourites_limit}`) and `GET /api/v1/users/me/favourites` (newest first, paginated, only videos
+  visible in the app). `GET /videos` and `GET /videos/{id}` now carry `is_favourite` per user.
+  Rules: only visible videos can be added (else `404 VIDEO_NOT_FOUND`); removing never checks
+  visibility; an unpublished video drops out of the list but the favourite is kept; deleting a
+  video or an account deletes its favourites; `FAVOURITES_MAX_PER_USER` (500, `409
+  FAVOURITES_LIMIT_REACHED`) and `FAVOURITES_MAX_CHANGES_PER_HOUR` (300, `429`). With
+  `PAYMENTS_LOCK_VIDEOS` on, hearts still work but the list needs a subscription (it hands out
+  playback links). Code: `repositories/favourite_repo.py`, `services/favourite_service.py`,
+  `routers/favourites.py`. Tests: `tests/test_favourites.py` (13); server 143 pass.
+
 - **2026-10-19 (email OTP)** — **The same OTP now goes to the mobile number and, when the
   account has one, to its email address.** New `app/providers/email/` package mirroring the SMS
   one: `mock` (default, logs only), `smtp` (any relay/mailbox) and `brevo` (free tier, 300/day),

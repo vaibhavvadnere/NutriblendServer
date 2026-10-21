@@ -270,6 +270,12 @@ class Settings(BaseSettings):
     # Separate from PAYMENTS_ENABLED so payments can be tested before anything is locked.
     PAYMENTS_LOCK_VIDEOS: bool = False
 
+    # ── Favourites ───────────────────────────────────────────────────────────
+    # Most videos one user can keep as favourites (stops a script filling the DB).
+    FAVOURITES_MAX_PER_USER: int = 500
+    # Add/remove taps per user per hour (generous: a person tapping hearts never gets near it).
+    FAVOURITES_MAX_CHANGES_PER_HOUR: int = 300
+
     # Razorpay (https://dashboard.razorpay.com → Account & Settings → API Keys).
     # Test keys start with rzp_test_, live keys with rzp_live_. The KEY SECRET and
     # WEBHOOK SECRET never leave the server; only the KEY ID is sent to the app.

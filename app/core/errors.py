@@ -75,6 +75,7 @@ from app.core.exceptions import (
     PaymentPending,
     PaymentProviderUnavailable,
     SubscriptionRequired,
+    FavouritesLimitReached,
 )
 
 __all__ = ["APIError", "ErrorCode", "error_body", "register_error_handlers", "status_for"]
@@ -126,6 +127,7 @@ _DOMAIN_STATUS: dict[type[DomainError], int] = {
     PaymentPending: status.HTTP_409_CONFLICT,
     PaymentProviderUnavailable: status.HTTP_502_BAD_GATEWAY,
     SubscriptionRequired: status.HTTP_403_FORBIDDEN,
+    FavouritesLimitReached: status.HTTP_409_CONFLICT,
 }
 
 

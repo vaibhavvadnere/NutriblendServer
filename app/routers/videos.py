@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.core.deps import get_current_user, public_base_url, require_subscription
 from app.schemas.common import ERROR_RESPONSES, ApiResponse, ok
 from app.schemas.video import CategoryList, DocumentPages, VideoOut, VideoPage
-from app.services import document_service, video_service
+from app.services import document_service, favourite_service, video_service
 
 router = APIRouter(
     prefix=f"{settings.API_PREFIX}/videos",
@@ -29,15 +29,18 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=ApiResponse[VideoPage], dependencies=[Depends(require_subscription)])
+@router.get("", response_model=ApiResponse[VideoPage])
 async def list_videos(
     request: Request,
     category: Optional[str] = Query(default=None, max_length=40),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=video_service.MAX_PAGE_SIZE),
+    user: dict = Depends(require_subscription),
 ):
-    """Published videos in display order (`sort_order`, then newest)."""
-    return ok(await video_service.list_published(category, page, page_size, public_base_url(request)), "Videos fetched successfully")
+    """Published videos in display order (`sort_order`, then newest). `is_favourite` is set per user."""
+    result = await video_service.list_published(category, page, page_size, public_base_url(request))
+    await favourite_service.mark(user["_id"], result.items)
+    return ok(result, "Videos fetched successfully")
 
 
 @router.get("/categories", response_model=ApiResponse[CategoryList])
@@ -46,10 +49,12 @@ async def list_categories():
     return ok(CategoryList(categories=await video_service.categories(published_only=True)), "Categories fetched")
 
 
-@router.get("/{video_id}", response_model=ApiResponse[VideoOut], dependencies=[Depends(require_subscription)])
-async def get_video(video_id: str, request: Request):
-    """One published video (404 for drafts or unknown ids)."""
-    return ok(await video_service.get_published(video_id, public_base_url(request)), "Video fetched successfully")
+@router.get("/{video_id}", response_model=ApiResponse[VideoOut])
+async def get_video(video_id: str, request: Request, user: dict = Depends(require_subscription)):
+    """One published video (404 for drafts or unknown ids). `is_favourite` is set per user."""
+    video = await video_service.get_published(video_id, public_base_url(request))
+    await favourite_service.mark(user["_id"], [video])
+    return ok(video, "Video fetched successfully")
 
 
 @router.get("/{video_id}/document", response_model=ApiResponse[DocumentPages], dependencies=[Depends(require_subscription)])

@@ -63,6 +63,7 @@ class ErrorCode:
     PAYMENT_PENDING = "PAYMENT_PENDING"
     PAYMENT_PROVIDER_ERROR = "PAYMENT_PROVIDER_ERROR"
     SUBSCRIPTION_REQUIRED = "SUBSCRIPTION_REQUIRED"
+    FAVOURITES_LIMIT_REACHED = "FAVOURITES_LIMIT_REACHED"
     NOT_FOUND = "NOT_FOUND"
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
@@ -353,4 +354,11 @@ class PaymentProviderUnavailable(DomainError):
 class SubscriptionRequired(DomainError):
     code = ErrorCode.SUBSCRIPTION_REQUIRED
     message = "Subscribe to watch this content."
+
+
+# ── Favourites ───────────────────────────────────────────────────────────────
+
+class FavouritesLimitReached(DomainError):
+    code = ErrorCode.FAVOURITES_LIMIT_REACHED
+    message = "You have reached the maximum number of favourites. Remove some to add new ones."
 

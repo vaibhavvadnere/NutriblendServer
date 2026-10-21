@@ -32,7 +32,7 @@ def pay(monkeypatch):
     from app.core.config import settings
     from app.providers import payments
     from app.repositories import (
-        otp_repo, payment_event_repo, payment_repo, plan_repo, refresh_token_repo,
+        favourite_repo, otp_repo, payment_event_repo, payment_repo, plan_repo, refresh_token_repo,
         subscription_repo, user_repo, video_repo,
     )
 
@@ -46,6 +46,7 @@ def pay(monkeypatch):
         (otp_repo, "otps_collection", "otps"),
         (refresh_token_repo, "refresh_tokens_collection", "refresh_tokens"),
         (video_repo, "videos_collection", "videos"),
+        (favourite_repo, "favourites_collection", "favourites"),
     ]:
         monkeypatch.setattr(module, attr, db[name])
     monkeypatch.setattr(settings, "PAYMENTS_ENABLED", True)

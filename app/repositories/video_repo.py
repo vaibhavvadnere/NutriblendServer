@@ -222,6 +222,15 @@ async def search_published(category: Optional[str], skip: int, limit: int) -> tu
     return [doc async for doc in cursor], total
 
 
+async def find_visible_by_ids(video_ids: list[ObjectId]) -> list[dict]:
+    """The videos among `video_ids` the app may show (any order — the caller orders them)."""
+    if not video_ids:
+        return []
+    filters: dict[str, Any] = visible_filter()
+    filters["_id"] = {"$in": video_ids}
+    return [doc async for doc in videos_collection.find(filters)]
+
+
 async def categories(published_only: bool) -> list[str]:
     filters: dict[str, Any] = {"category": {"$nin": [None, ""]}}
     if published_only:

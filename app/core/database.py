@@ -53,6 +53,8 @@ payment_orders_collection = db["payment_orders"]
 subscriptions_collection = db["subscriptions"]
 # Razorpay webhook deliveries already processed (de-duplication + audit trail).
 payment_events_collection = db["payment_events"]
+# Videos a user marked as favourite: one document per (user, video).
+favourites_collection = db["favourites"]
 
 
 def describe_connection() -> str:
@@ -134,6 +136,11 @@ async def init_indexes() -> None:
     await payment_events_collection.create_index([("razorpay_order_id", 1), ("received_at", -1)])
     # Keep the audit trail for a year, then let Mongo clean it up.
     await payment_events_collection.create_index("received_at", expireAfterSeconds=365 * 24 * 3600)
+
+    # Favourites: the unique pair is the real guard against duplicates (two taps at once).
+    await favourites_collection.create_index([("user_id", 1), ("video_id", 1)], unique=True)
+    await favourites_collection.create_index([("user_id", 1), ("created_at", -1)])
+    await favourites_collection.create_index("video_id")
 
     # Rate-limit counters expire themselves, so the collection stays small
     # without any cleanup job.

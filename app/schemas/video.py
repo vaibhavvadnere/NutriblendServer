@@ -243,6 +243,18 @@ class VideoOut(BaseModel):
     #: Present when the video has a document that is ready to view
     #: (GET /videos/{id}/document for its pages).
     document: Optional[DocumentInfo] = None
+    #: True when the signed-in user has marked this video as a favourite (filled heart).
+    is_favourite: bool = False
+
+
+class FavouriteStatus(BaseModel):
+    """Answer to adding / removing a favourite."""
+    video_id: str
+    is_favourite: bool
+    #: How many favourites the user has now (e.g. for a badge on the Favourites tab).
+    favourites_count: int
+    #: Most favourites a user may keep.
+    favourites_limit: int
 
 
 class ReplacementInfo(BaseModel):

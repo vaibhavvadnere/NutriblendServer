@@ -18,7 +18,9 @@ from app.core.errors import register_error_handlers
 from app.providers.email import current_provider_name as email_provider_name
 from app.providers.sms import current_provider_name
 from app.providers.storage import get_storage
-from app.routers import admin, admin_accounts, admin_auth, admin_payments, admin_videos, auth, legal, media, payments, users, videos
+from app.routers import (
+    admin, admin_accounts, admin_auth, admin_payments, admin_videos, auth, favourites, legal, media, payments, users, videos,
+)
 from app.schemas.common import ok
 from app.services import document_service, optimizer, payment_reconcile_service, rate_limiter, video_service
 from app.utils.network import lan_ip
@@ -104,6 +106,8 @@ app.include_router(admin_videos.router)
 app.include_router(admin_videos.upload_router)
 app.include_router(admin_videos.document_router)
 app.include_router(videos.router)
+app.include_router(favourites.video_favourite_router)
+app.include_router(favourites.my_favourites_router)
 app.include_router(media.router)
 app.include_router(legal.router)
 app.include_router(payments.router)
