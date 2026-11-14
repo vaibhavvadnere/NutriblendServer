@@ -208,9 +208,18 @@ async def start_admin_signin(mobile_number: str, ip: str) -> OTPSentResponse:
     Dashboard sign-in: send an OTP for an ADMIN session. Also serves "resend".
 
     Only admin accounts get an OTP; anyone else is refused here, before any SMS
-    is sent. Same rate limits as every other OTP send.
+    is sent.
+
+    2026-11-15 (user decision): unlike every other OTP send, this one is NOT
+    throttled by rate_limiter — admins (a short, known list via
+    ADMIN_MOBILE_NUMBERS / is_admin()) kept getting locked out of their own
+    dashboard by the per-mobile OTP cap while testing. This trades away the
+    SMS-cost/enumeration protection _throttle_otp normally gives, but only for
+    numbers that are already admin accounts; a non-admin number still gets a
+    plain 403 here with no OTP ever sent, so this doesn't open OTP spam to
+    arbitrary numbers. verify-otp brute-force protection (OTP_MAX_ATTEMPTS,
+    verify_ip_hour) is untouched.
     """
-    await _throttle_otp(mobile_number, ip)
     user = await user_service.get_for_signin(mobile_number)  # 404 unknown, 403 blocked
     if not user_service.is_admin_account(user):
         raise NotAnAdmin()

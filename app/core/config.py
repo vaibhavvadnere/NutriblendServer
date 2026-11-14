@@ -174,8 +174,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_ENABLED: bool = True
     # Minimum gap between two OTPs for the same number. Drives "Resend in 47s".
     OTP_COOLDOWN_SECONDS: int = 60
-    OTP_MAX_PER_MOBILE_PER_HOUR: int = 5
-    OTP_MAX_PER_MOBILE_PER_DAY: int = 10
+    # 2026-11-15 (user decision): normal users get ONE per-mobile OTP-send
+    # limit now, not a 5/hour + 10/day pair — 20 requests, rolling hourly
+    # window. Admin sign-in (start_admin_signin) skips this limit entirely.
+    OTP_MAX_PER_MOBILE_PER_HOUR: int = 20
     OTP_MAX_PER_IP_PER_HOUR: int = 20
     VERIFY_MAX_PER_IP_PER_HOUR: int = 100
     # Trust X-Forwarded-For for the client IP. Turn ON only when the app sits

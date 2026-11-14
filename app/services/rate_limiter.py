@@ -98,13 +98,6 @@ def otp_send_rules(mobile_number: str, ip: str) -> tuple[Rule, ...]:
             message="Too many OTP requests for this number. Please try again later.",
         ),
         Rule(
-            scope="otp_mobile_day",
-            identifier=mobile_number,
-            limit=settings.OTP_MAX_PER_MOBILE_PER_DAY,
-            window_seconds=86400,
-            message="Daily OTP limit reached for this number. Please try again tomorrow.",
-        ),
-        Rule(
             scope="otp_ip_hour",
             identifier=ip,
             limit=settings.OTP_MAX_PER_IP_PER_HOUR,
@@ -157,7 +150,7 @@ async def reset_for(scope: str, identifier: str) -> None:
     await rate_limit_repo.delete_for(scope, identifier)
 
 
-OTP_SCOPES = ("otp_cooldown", "otp_mobile_hour", "otp_mobile_day", "otp_ip_hour", "verify_ip_hour")
+OTP_SCOPES = ("otp_cooldown", "otp_mobile_hour", "otp_ip_hour", "verify_ip_hour")
 
 
 async def reset_otp_limits_on_startup() -> None:
