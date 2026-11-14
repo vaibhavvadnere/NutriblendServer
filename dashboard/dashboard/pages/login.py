@@ -125,25 +125,28 @@ def _otp_step() -> None:
         otp = otp.strip()
         if not otp.isdigit():
             st.error("The OTP contains digits only.")
-            return
-        client = session.get_client()
-        try:
-            with st.spinner("Verifying…"):
-                result = auth_api.verify_otp(client, mobile, otp)
-                admin_api.confirm_admin(client)
-        except Forbidden as exc:
-            # Show the server's reason (not an admin / wrong session type) as-is.
-            auth_api.logout(client)
-            _reset()
-            st.session_state["flash"] = f"Signed out: {exc.message}"
-            st.rerun()
-        except ApiError as exc:
-            client.tokens.clear()
-            _show_error(exc)
-            return
-        session.set_current_user(result.user)
-        _reset()
-        st.rerun()
+        else:
+            client = session.get_client()
+            try:
+                with st.spinner("Verifying…"):
+                    result = auth_api.verify_otp(client, mobile, otp)
+                    admin_api.confirm_admin(client)
+            except Forbidden as exc:
+                # Show the server's reason (not an admin / wrong session type) as-is.
+                auth_api.logout(client)
+                _reset()
+                st.session_state["flash"] = f"Signed out: {exc.message}"
+                st.rerun()
+            except ApiError as exc:
+                # Wrong/expired OTP etc. Fall through (no return!) so the
+                # Resend / Change number row below still renders — a failed
+                # verify used to dead-end the page with no way to try again.
+                client.tokens.clear()
+                _show_error(exc)
+            else:
+                session.set_current_user(result.user)
+                _reset()
+                st.rerun()
 
     wait = int(sent.resend_available_in_seconds - (time.time() - st.session_state[_SENT_AT]))
     # The countdown only ticks if something reruns the page, and nothing else
@@ -165,7 +168,8 @@ def _resend_row(mobile: str) -> None:
         label = "Resend OTP" if wait <= 0 else f"Resend in {wait}s"
         if st.button(label, disabled=wait > 0, width="stretch", key="login.resend_btn"):
             try:
-                new_sent = auth_api.resend_otp(session.get_client(), mobile)
+                with st.spinner("Sending OTP…"):
+                    new_sent = auth_api.resend_otp(session.get_client(), mobile)
             except ApiError as exc:
                 _show_error(exc)
                 return
