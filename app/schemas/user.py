@@ -7,6 +7,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.config import settings
 from app.utils.phone import MOBILE_REGEX, InvalidMobileNumber, normalize_mobile
 
 # Account lifecycle:
@@ -38,6 +39,30 @@ def validate_mobile_field(v: str) -> str:
         return normalize_mobile(v)
     except InvalidMobileNumber as exc:
         raise ValueError(str(exc)) from exc
+
+
+def validate_password_field(v: Optional[str]) -> Optional[str]:
+    """
+    Shared validator for every schema that accepts a password.
+
+    Deliberately permissive about *what* is in it — no "must contain a symbol"
+    rules, which push people towards `Password1!` and are worse than length.
+    Only length is enforced, and the upper bound is bcrypt's: it truncates at
+    72 bytes, so accepting more would silently ignore the rest and two
+    different long passwords could both unlock the account.
+    """
+    if v is None:
+        return None
+    # Leading/trailing spaces are nearly always a paste accident, and the user
+    # would struggle to type the same thing again.
+    v = v.strip()
+    if not v:
+        return None
+    if len(v) < settings.PASSWORD_MIN_LENGTH:
+        raise ValueError(f"Password must be at least {settings.PASSWORD_MIN_LENGTH} characters")
+    if len(v.encode("utf-8")) > settings.PASSWORD_MAX_LENGTH:
+        raise ValueError(f"Password cannot be longer than {settings.PASSWORD_MAX_LENGTH} characters")
+    return v
 
 
 def validate_name_field(v: str) -> str:
@@ -73,6 +98,8 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     email: Optional[EmailStr] = None
     state: Optional[str] = None
+    #: Optional. Stored as a bcrypt hash; omit it and the account has none.
+    password: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("mobile_number")
     @classmethod
@@ -88,6 +115,11 @@ class UserCreate(BaseModel):
     @classmethod
     def _state(cls, v: Optional[str]) -> Optional[str]:
         return validate_state_field(v)
+
+    @field_validator("password")
+    @classmethod
+    def _password(cls, v: Optional[str]) -> Optional[str]:
+        return validate_password_field(v)
 
 
 class UserUpdate(BaseModel):
@@ -114,6 +146,10 @@ class UserOut(BaseModel):
     email: Optional[EmailStr] = None
     state: Optional[str] = None
     status: UserStatus = "pending"
+    #: True when the account has a password set. The hash itself is NEVER
+    #: returned by any endpoint; this only tells the app whether to offer
+    #: "sign in with password" or "set a password".
+    has_password: bool = False
     #: "user" or "admin". Returned only on authenticated responses
     #: (verify-otp, /users/me) — never on the unauthenticated OTP-sent
     #: response, which would let anyone probe for admin numbers.

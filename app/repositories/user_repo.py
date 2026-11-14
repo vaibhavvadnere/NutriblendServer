@@ -31,6 +31,11 @@ async def find_by_id(user_id: str) -> Optional[dict]:
     return await users_collection.find_one({"_id": ObjectId(user_id)})
 
 
+async def find_by_email(email: str) -> Optional[dict]:
+    """The account using this email, if any. Email is unique when present."""
+    return await users_collection.find_one({"email": email})
+
+
 async def email_taken(email: str, except_mobile: Optional[str] = None) -> bool:
     """True if another account (other than `except_mobile`) uses this email."""
     query: dict[str, Any] = {"email": email}
@@ -93,8 +98,9 @@ async def soft_delete(mobile_number: str, when: datetime) -> Optional[dict]:
                 "updated_at": when,
             },
             # An account that never expires on the pending TTL, and no longer
-            # needs a login timestamp.
-            "$unset": {"pending_expires_at": ""},
+            # needs a login timestamp. The password hash goes too — a deleted
+            # account must not keep a usable credential.
+            "$unset": {"pending_expires_at": "", "password_hash": ""},
         },
         return_document=ReturnDocument.AFTER,
     )

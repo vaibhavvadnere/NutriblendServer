@@ -24,6 +24,7 @@ class ErrorCode:
     ACCOUNT_NOT_FOUND = "ACCOUNT_NOT_FOUND"
     ACCOUNT_BLOCKED = "ACCOUNT_BLOCKED"
     ACCOUNT_DELETED = "ACCOUNT_DELETED"
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
     EMAIL_IN_USE = "EMAIL_IN_USE"
     OTP_NOT_REQUESTED = "OTP_NOT_REQUESTED"
     OTP_EXPIRED = "OTP_EXPIRED"
@@ -115,6 +116,19 @@ class AccountDeleted(DomainError):
         "This account has been deleted. This mobile number cannot be registered "
         "again — please contact support if you need it restored."
     )
+
+
+class InvalidCredentials(DomainError):
+    """
+    Password sign-in failed — for ANY reason.
+
+    Deliberately one error for every case: unknown email, account has no
+    password, wrong password, account not yet verified. Distinguishing them
+    would turn this endpoint into an oracle telling an attacker which email
+    addresses have accounts and which of those have passwords set.
+    """
+    code = ErrorCode.INVALID_CREDENTIALS
+    message = "Invalid email or password."
 
 
 class CannotDeleteAdmin(DomainError):

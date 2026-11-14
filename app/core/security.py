@@ -21,6 +21,9 @@ import hmac
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+import bcrypt
 
 from jose import JWTError, jwt
 
@@ -158,3 +161,37 @@ def hash_otp(otp: str) -> str:
 def verify_otp_hash(otp: str, otp_hash: str) -> bool:
     # Constant-time compare so a timing side channel can't leak the digest.
     return hmac.compare_digest(hash_otp(otp), otp_hash)
+
+
+# ── Passwords ────────────────────────────────────────────────────────────────
+#
+# Optional: an account may have no password at all (OTP is the primary way in).
+# When one is set it is stored ONLY as a bcrypt hash — never as typed, never
+# reversibly encrypted, and never returned by any endpoint.
+#
+# bcrypt rather than SHA-256: a password is low-entropy and human-chosen, so the
+# hash must be deliberately slow. The OTP hashing above is the opposite case —
+# high-entropy and short-lived, where a fast digest is correct.
+
+
+def hash_password(password: str) -> str:
+    """Return the bcrypt hash of `password`, ready to store."""
+    rounds = settings.PASSWORD_BCRYPT_ROUNDS
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds)).decode("utf-8")
+
+
+def verify_password(password: str, password_hash: Optional[str]) -> bool:
+    """
+    True when `password` matches the stored hash.
+
+    False — never an exception — when the account has no password set, so a
+    caller can treat "no password" and "wrong password" identically and avoid
+    telling an attacker which accounts have one.
+    """
+    if not password_hash or not password:
+        return False
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except (ValueError, TypeError):
+        # A corrupt or non-bcrypt value in the field must not crash a login.
+        return False

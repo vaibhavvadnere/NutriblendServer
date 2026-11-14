@@ -29,6 +29,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.core.config import settings
+from app.core.security import hash_password
 from app.core.exceptions import (
     AccountBlocked,
     AccountDeleted,
@@ -71,6 +72,7 @@ def to_user_out(doc: dict) -> UserOut:
         state=doc.get("state"),
         status=status_value,
         role=role_of(doc),
+        has_password=bool(doc.get("password_hash")),
         is_verified=status_value == STATUS_ACTIVE,
         created_at=doc["created_at"],
         verified_at=doc.get("verified_at"),
@@ -80,6 +82,24 @@ def to_user_out(doc: dict) -> UserOut:
 
 async def get_by_mobile(mobile_number: str) -> Optional[dict]:
     return await user_repo.find_by_mobile(mobile_number)
+
+
+async def get_by_email(email: str) -> Optional[dict]:
+    """The account using this email, or None. Used by password sign-in, which
+    must not raise a distinguishable error when there is no match."""
+    if not email:
+        return None
+    return await user_repo.find_by_email(email)
+
+
+async def record_login(mobile_number: str) -> dict:
+    """Stamp a successful sign-in that did not go through OTP verification.
+
+    activate() does this for the OTP path; password sign-in needs the same
+    `last_login_at` without touching status or verified_at."""
+    return await user_repo.update_by_mobile(
+        mobile_number, {"last_login_at": datetime.now(timezone.utc)}
+    )
 
 
 async def get_by_id(user_id: str) -> dict:
@@ -119,7 +139,11 @@ async def _assert_email_free(email: Optional[str], except_mobile: Optional[str] 
 
 
 async def create_or_refresh_pending(
-    mobile_number: str, name: str, email: Optional[str], state: Optional[str] = None
+    mobile_number: str,
+    name: str,
+    email: Optional[str],
+    state: Optional[str] = None,
+    password: Optional[str] = None,
 ) -> dict:
     """
     The signup write.
@@ -131,6 +155,11 @@ async def create_or_refresh_pending(
     * Blocked account exists    -> AccountBlocked.
     * Deleted account exists    -> AccountDeleted. The number stays claimed by the
       tombstone, so signing up again needs an admin to release it.
+
+    `password` is optional. Given, it is stored as a bcrypt hash in
+    `password_hash`; omitted, the field is simply absent and the account has no
+    password. Retrying a pending signup without one does NOT clear a password
+    set on an earlier attempt — same rule as the email.
     """
     now = datetime.now(timezone.utc)
     existing = await user_repo.find_by_mobile(mobile_number)
@@ -154,6 +183,8 @@ async def create_or_refresh_pending(
         }
         if email is not None:
             changes["email"] = email
+        if password is not None:
+            changes["password_hash"] = hash_password(password)
         if state is not None:
             changes["state"] = state
         return await user_repo.update_by_id(existing["_id"], changes)
@@ -163,6 +194,9 @@ async def create_or_refresh_pending(
         "mobile_number": mobile_number,
         "name": name,
         "email": email,
+        # Absent rather than None when no password was given, so the field only
+        # exists on accounts that actually have one.
+        **({"password_hash": hash_password(password)} if password else {}),
         "state": state,
         "role": ROLE_USER,
         "status": STATUS_PENDING,

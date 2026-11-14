@@ -5,13 +5,14 @@ schemas/auth.py — Request/response models for signup, signin and tokens.
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.schemas.user import (
     Role,
     UserOut,
     validate_mobile_field,
     validate_name_field,
+    validate_password_field,
     validate_state_field,
 )
 
@@ -22,6 +23,10 @@ class SignupRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     email: Optional[EmailStr] = None
     state: Optional[str] = None
+    #: Optional. Leave it out and the account simply has no password — OTP
+    #: stays the way in. When given it is stored as a bcrypt hash and is never
+    #: returned by any endpoint.
+    password: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("mobile_number")
     @classmethod
@@ -38,15 +43,55 @@ class SignupRequest(BaseModel):
     def _state(cls, v: Optional[str]) -> Optional[str]:
         return validate_state_field(v)
 
+    @field_validator("password")
+    @classmethod
+    def _password(cls, v: Optional[str]) -> Optional[str]:
+        return validate_password_field(v)
 
-class SigninRequest(BaseModel):
-    """POST /auth/signin and /auth/resend-otp — sends an OTP to an existing account."""
+
+class OtpResendRequest(BaseModel):
+    """POST /auth/resend-otp — sends another OTP to an existing account."""
     mobile_number: str
 
     @field_validator("mobile_number")
     @classmethod
     def _mobile(cls, v: str) -> str:
         return validate_mobile_field(v)
+
+
+class SigninRequest(BaseModel):
+    """
+    POST /auth/signin — two ways in, one endpoint.
+
+        {"mobile_number": "9876543210"}                 -> OTP is sent
+        {"email": "a@b.com", "password": "..."}         -> signed in straight away
+
+    Send one or the other. `password` is meaningless without `email`, and an
+    `email` with no `password` cannot sign anyone in, so both are rejected.
+    """
+    mobile_number: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = Field(default=None, min_length=1)
+
+    @field_validator("mobile_number")
+    @classmethod
+    def _mobile(cls, v: Optional[str]) -> Optional[str]:
+        return validate_mobile_field(v) if v is not None else None
+
+    @model_validator(mode="after")
+    def _one_way_in(self):
+        has_password_pair = bool(self.email and self.password)
+        if has_password_pair:
+            return self
+        if self.email or self.password:
+            raise ValueError("Send email and password together, or send mobile_number instead")
+        if not self.mobile_number:
+            raise ValueError("Send mobile_number, or email and password")
+        return self
+
+    @property
+    def uses_password(self) -> bool:
+        return bool(self.email and self.password)
 
 
 class OTPVerify(BaseModel):

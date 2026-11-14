@@ -15,6 +15,8 @@ OTP screen and one code path for "I am now logged in".
 This module is HTTP only. The flows themselves live in services/auth_service.py.
 """
 
+from typing import Union
+
 from fastapi import APIRouter, Depends, Request, status
 
 from app.core.config import settings
@@ -26,6 +28,7 @@ from app.schemas.auth import (
     LogoutAllResponse,
     OTPSentResponse,
     OTPVerify,
+    OtpResendRequest,
     RefreshRequest,
     SigninRequest,
     SignupRequest,
@@ -55,29 +58,63 @@ async def signup(payload: SignupRequest, request: Request):
     - `409 EMAIL_IN_USE` — that email belongs to another account.
     - `403 ACCOUNT_BLOCKED` — barred account.
     - `429 RATE_LIMITED` — too many OTP requests; `Retry-After` says when.
+
+    `password` is **optional**. Omit it and the account has none — OTP stays
+    the way in. When supplied it is stored as a bcrypt hash and never returned
+    by any endpoint; `has_password` on the user object says whether one is set.
     """
     data = await auth_service.start_signup(
-        payload.mobile_number, payload.name, payload.email, payload.state, client_ip(request)
+        payload.mobile_number, payload.name, payload.email, payload.state, client_ip(request),
+        password=payload.password,
     )
     return ok(data, OTP_SENT)
 
 
-@router.post("/signin", response_model=ApiResponse[OTPSentResponse])
+@router.post("/signin", response_model=ApiResponse[Union[TokenResponse, OTPSentResponse]])
 async def signin(payload: SigninRequest, request: Request):
     """
-    Start login for an existing account and send an OTP.
+    Sign in — **two ways, one endpoint**.
 
-    A *pending* account may sign in — someone who abandoned signup and later
-    taps "Sign In" shouldn't hit a dead end; verifying activates them.
+    **With a mobile number** (the original flow, unchanged):
+    ```
+    {"mobile_number": "9876543210"}
+    ```
+    An OTP is sent and `data` is the usual OTP-sent body. Finish at
+    `/auth/verify-otp`. A *pending* account may sign in this way — someone who
+    abandoned signup and later taps "Sign In" shouldn't hit a dead end;
+    verifying activates them.
 
-    - `404 ACCOUNT_NOT_FOUND` — send them to the sign-up screen.
-    - `403 ACCOUNT_BLOCKED` / `429 RATE_LIMITED` as above.
+    **With email and password** (no OTP):
+    ```
+    {"email": "boss@example.com", "password": "..."}
+    ```
+    `data` is a full session — `access_token`, `refresh_token`, `user` — exactly
+    what `/auth/verify-otp` returns.
+
+    **Telling the two apart:** if `data.access_token` is present you are signed
+    in; otherwise an OTP was sent and the OTP screen comes next.
+
+    Send one or the other: an email without a password (or the reverse) is `422`.
+
+    - `404 ACCOUNT_NOT_FOUND` — mobile path only; send them to sign-up.
+    - `401 INVALID_CREDENTIALS` — password path. One error for every cause —
+      unknown email, no password set, wrong password, account not yet verified —
+      so the endpoint cannot be used to discover which addresses have accounts.
+      **Only verified (`active`) accounts can sign in with a password**; a
+      password must never be a way around proving the mobile number.
+    - `403 ACCOUNT_BLOCKED` / `ACCOUNT_DELETED` — mobile path.
+    - `429 RATE_LIMITED` — both paths, with their own separate limits.
     """
+    if payload.uses_password:
+        data = await auth_service.signin_with_password(
+            payload.email, payload.password, client_ip(request)
+        )
+        return ok(data, "Signed in successfully")
     return ok(await auth_service.start_signin(payload.mobile_number, client_ip(request)), OTP_SENT)
 
 
 @router.post("/resend-otp", response_model=ApiResponse[OTPSentResponse])
-async def resend_otp(payload: SigninRequest, request: Request):
+async def resend_otp(payload: OtpResendRequest, request: Request):
     """
     Resend an OTP to an account that already exists (pending or active).
 

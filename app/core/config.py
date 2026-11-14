@@ -272,6 +272,22 @@ class Settings(BaseSettings):
 
     # ── Favourites ───────────────────────────────────────────────────────────
     # Most videos one user can keep as favourites (stops a script filling the DB).
+    # ── Passwords ────────────────────────────────────────────────────────────
+    # Optional at signup. Stored only as a bcrypt hash, never as typed.
+    PASSWORD_MIN_LENGTH: int = 8
+    # bcrypt silently truncates at 72 BYTES, so anything longer gives a false
+    # sense of strength and two different long passwords could both match.
+    # Rejecting above the limit is honest; raising it needs a different algorithm.
+    PASSWORD_MAX_LENGTH: int = 72
+    # Work factor. 12 is the usual modern default: ~0.2-0.3s per hash, which is
+    # slow enough to hurt offline cracking and fast enough for a login request.
+    PASSWORD_BCRYPT_ROUNDS: int = 12
+
+    # Password sign-in is guessable in a way an OTP is not, so it gets its own
+    # limits, separate from the OTP ones.
+    PASSWORD_LOGIN_MAX_PER_EMAIL_PER_HOUR: int = 10
+    PASSWORD_LOGIN_MAX_PER_IP_PER_HOUR: int = 30
+
     # ── Watch history ────────────────────────────────────────────────────────
     # Two plays of the same video closer together than this count as one.
     # Guards the number against the app re-posting after a seek, a re-buffer,

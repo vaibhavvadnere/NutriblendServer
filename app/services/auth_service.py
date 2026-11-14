@@ -37,6 +37,7 @@ from app.core.exceptions import (
     AccountGone,
     AccountNotFound,
     CannotDeleteAdmin,
+    InvalidCredentials,
     NotAnAdmin,
     OtpAttemptsExceeded,
     OtpExpired,
@@ -46,6 +47,8 @@ from app.core.exceptions import (
 )
 from app.core.security import (
     PURPOSE_DELETE,
+    hash_password,
+    verify_password,
     SCOPE_ADMIN,
     SCOPE_APP,
     SESSION_SCOPES,
@@ -65,6 +68,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.services import favourite_service, rate_limiter, subscription_service, token_service, user_service, watch_service
+from app.providers.email import mask_email
 from app.utils.phone import mask
 
 logger = logging.getLogger("nutriblend.auth")
@@ -167,11 +171,16 @@ async def _issue_otp(
 
 
 async def start_signup(
-    mobile_number: str, name: str, email: Optional[str], state: Optional[str], ip: str
+    mobile_number: str,
+    name: str,
+    email: Optional[str],
+    state: Optional[str],
+    ip: str,
+    password: Optional[str] = None,
 ) -> OTPSentResponse:
     """Create (or refresh) a pending account and send it an OTP."""
     await _throttle_otp(mobile_number, ip)
-    doc = await user_service.create_or_refresh_pending(mobile_number, name, email, state)
+    doc = await user_service.create_or_refresh_pending(mobile_number, name, email, state, password)
     return await _issue_otp(
         mobile_number,
         is_new_account=True,
@@ -272,6 +281,73 @@ async def verify_otp(mobile_number: str, otp: str, ip: str) -> TokenResponse:
     refresh = await token_service.issue_refresh_token(user["mobile_number"], scope=scope)
     return TokenResponse(
         access_token=access_token,
+        refresh_token=refresh.token,
+        expires_in=access_token_expires_in_seconds(scope),
+        scope=scope,
+        user=user_service.to_user_out(user),
+    )
+
+
+# ── Signing in with a password ───────────────────────────────────────────────
+
+#: A real bcrypt hash of a throwaway value. When no account matches the email we
+#: still verify against this, so a miss costs the same ~0.2s as a hit. Without
+#: it, response time alone tells an attacker which addresses are registered.
+_DUMMY_HASH = hash_password("no-such-account-timing-equaliser")
+
+
+async def signin_with_password(email: str, password: str, ip: str) -> TokenResponse:
+    """
+    Email + password sign-in. No OTP.
+
+    Every failure raises the SAME InvalidCredentials, whatever went wrong:
+    unknown email, no password set on the account, wrong password, account not
+    yet verified. Telling them apart would reveal which addresses have accounts.
+
+    **Only `active` accounts may sign in this way.** A `pending` account — one
+    that signed up with a password but never verified its OTP — must not get a
+    session, or the password would be a way around phone verification: anyone
+    could sign up against a number they do not own and log in regardless.
+    """
+    await rate_limiter.enforce(
+        rate_limiter.Rule(
+            scope="pwd_login_email_hour",
+            identifier=email.lower(),
+            limit=settings.PASSWORD_LOGIN_MAX_PER_EMAIL_PER_HOUR,
+            window_seconds=3600,
+            message="Too many sign-in attempts for this account. Please try again later.",
+        ),
+        rate_limiter.Rule(
+            scope="pwd_login_ip_hour",
+            identifier=ip,
+            limit=settings.PASSWORD_LOGIN_MAX_PER_IP_PER_HOUR,
+            window_seconds=3600,
+            message="Too many sign-in attempts. Please try again later.",
+        ),
+    )
+
+    user = await user_service.get_by_email(email)
+    stored = (user or {}).get("password_hash")
+
+    # Always run the comparison, even with nothing to compare against.
+    if not verify_password(password, stored or _DUMMY_HASH) or user is None:
+        logger.info("Password sign-in failed for %s from %s", mask_email(email), ip)
+        raise InvalidCredentials()
+
+    # Status is checked only AFTER the password matched, so a wrong password
+    # cannot be used to discover whether an account is blocked or pending.
+    if user.get("status") != user_service.STATUS_ACTIVE:
+        logger.info(
+            "Password sign-in refused for %s (status=%s)", mask_email(email), user.get("status")
+        )
+        raise InvalidCredentials()
+
+    user = await user_service.record_login(user["mobile_number"])
+    scope = SCOPE_APP
+    refresh = await token_service.issue_refresh_token(user["mobile_number"], scope=scope)
+    logger.info("Password sign-in for %s from %s", mask(user["mobile_number"]), ip)
+    return TokenResponse(
+        access_token=create_access_token(subject=user["mobile_number"], scope=scope),
         refresh_token=refresh.token,
         expires_in=access_token_expires_in_seconds(scope),
         scope=scope,

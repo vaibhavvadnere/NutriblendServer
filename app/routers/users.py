@@ -114,7 +114,7 @@ async def create_user(payload: UserCreate):
     mobile number. The account still has to pass OTP verification to become active.
     """
     doc = await user_service.create_or_refresh_pending(
-        payload.mobile_number, payload.name, payload.email, payload.state
+        payload.mobile_number, payload.name, payload.email, payload.state, payload.password
     )
     return ok(user_service.to_user_out(doc), "User created successfully")
 
