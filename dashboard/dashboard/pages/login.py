@@ -146,20 +146,30 @@ def _otp_step() -> None:
         st.rerun()
 
     wait = int(sent.resend_available_in_seconds - (time.time() - st.session_state[_SENT_AT]))
+    # The countdown only ticks if something reruns the page, and nothing else
+    # does for 59 seconds straight — without this, "Resend in 59s" just sits
+    # there looking stuck. Only poll while actually waiting; once Resend OTP
+    # is enabled there's nothing left to count down, so stop refreshing.
+    st.fragment(run_every="1s" if wait > 0 else None)(_resend_row)(mobile)
+
+
+def _resend_row(mobile: str) -> None:
+    sent: OtpSent = st.session_state[_SENT]
+    wait = int(sent.resend_available_in_seconds - (time.time() - st.session_state[_SENT_AT]))
     left, right = st.columns(2)
     with left:
-        if st.button("Change number", width="stretch"):
+        if st.button("Change number", width="stretch", key="login.change_number"):
             _reset()
             st.rerun()
     with right:
         label = "Resend OTP" if wait <= 0 else f"Resend in {wait}s"
-        if st.button(label, disabled=wait > 0, width="stretch"):
+        if st.button(label, disabled=wait > 0, width="stretch", key="login.resend_btn"):
             try:
-                sent = auth_api.resend_otp(session.get_client(), mobile)
+                new_sent = auth_api.resend_otp(session.get_client(), mobile)
             except ApiError as exc:
                 _show_error(exc)
                 return
-            _otp_sent(sent, mobile)
+            _otp_sent(new_sent, mobile)
             st.rerun()
 
 
