@@ -91,12 +91,22 @@ def current_provider_name() -> str:
 
 
 def mask_email(email: str) -> str:
-    """'boss@example.com' -> 'b•••@example.com'. For responses and logs."""
+    """'vaibhav@example.com' -> 'vai•••v@example.com'. First 3 and last 1
+    characters of the local part stay visible, everything between them is
+    hidden behind a fixed '•••' (not a per-character count, so the mask
+    never hints at the real length). Short local parts (<= 4 chars) fall
+    back to a single visible character so the head and tail never overlap
+    or show the whole thing. For responses and logs."""
     if not email or "@" not in email:
         return "•••"
     local, _, domain = email.partition("@")
-    head = local[0] if local else "•"
-    return f"{head}•••@{domain}"
+    if not local:
+        return f"•••@{domain}"
+    if len(local) <= 4:
+        masked = f"{local[0]}•••"
+    else:
+        masked = f"{local[:3]}•••{local[-1]}"
+    return f"{masked}@{domain}"
 
 
 __all__ = [
