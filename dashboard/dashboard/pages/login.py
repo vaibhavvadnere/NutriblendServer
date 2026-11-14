@@ -106,8 +106,12 @@ def _otp_step() -> None:
     sent: OtpSent = st.session_state[_SENT]
     mobile: str = st.session_state[_MOBILE]
 
+    if sent.email:
+        where = f"**{sent.mobile_number}** and **{sent.email}**"
+    else:
+        where = f"**{sent.mobile_number}**"
     st.info(
-        f"OTP sent to **{sent.mobile_number}**. It is valid for {sent.expires_in_minutes} minutes.",
+        f"OTP sent to {where}. It is valid for {sent.expires_in_minutes} minutes.",
         icon=":material/sms:",
     )
     if sent.dev_otp:

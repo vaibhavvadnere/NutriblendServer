@@ -35,6 +35,8 @@ class User(_Model):
 
 class OtpSent(_Model):
     mobile_number: str  # masked by the server, e.g. 98XXXXXX10
+    email: Optional[str] = None  # masked ("b***@gmail.com"), present only when also emailed
+    sent_to: list[str] = []  # which channels actually delivered, e.g. ["sms"] or ["sms", "email"]
     expires_in_minutes: int
     resend_available_in_seconds: int
     is_new_account: bool = False
