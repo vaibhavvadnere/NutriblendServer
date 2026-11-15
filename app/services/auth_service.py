@@ -29,6 +29,7 @@ input and worked out the caller's IP.
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -85,6 +86,41 @@ async def _throttle_otp(mobile_number: str, ip: str) -> None:
     leave enumeration free.
     """
     await rate_limiter.enforce(*rate_limiter.otp_send_rules(mobile_number, ip))
+
+
+_COOLDOWN_SCOPE = "otp_cooldown"
+
+
+@asynccontextmanager
+async def _cooldown_held_only_if_sent(mobile_number: str):
+    """
+    The 60-second resend cooldown must only outlive a request that actually
+    delivered an OTP (user decision, 2026-11-15).
+
+    _throttle_otp still consumes it up front, and that has to stay: the counter
+    is what makes the check atomic — two requests arriving together both
+    increment it and only the first gets through. Peeking first and recording
+    after the send would let a double-submitting client (the dashboard still
+    does this) fire two OTPs for one number.
+
+    So the cooldown is taken first and handed back here if anything goes wrong
+    before the message is out: EMAIL_IN_USE, ACCOUNT_EXISTS, unknown number,
+    blocked account, "admins cannot be deleted", or a failed SMS/email send.
+    Someone who mistypes their email can then fix it and retry immediately
+    instead of waiting out a cooldown for an OTP they never received.
+
+    RateLimited can never be raised inside this block — _throttle_otp has
+    already returned by then — so an active cooldown cannot refund itself.
+
+    The hourly caps (otp_mobile_hour, otp_ip_hour) are deliberately NOT handed
+    back. They are what keeps bulk number-probing expensive, and they are not
+    what a real user runs into.
+    """
+    try:
+        yield
+    except Exception:
+        await rate_limiter.reset_for(_COOLDOWN_SCOPE, mobile_number)
+        raise
 
 
 async def _issue_otp(
@@ -180,27 +216,31 @@ async def start_signup(
 ) -> OTPSentResponse:
     """Create (or refresh) a pending account and send it an OTP."""
     await _throttle_otp(mobile_number, ip)
-    doc = await user_service.create_or_refresh_pending(mobile_number, name, email, state, password)
-    return await _issue_otp(
-        mobile_number,
-        is_new_account=True,
-        role=user_service.role_of(doc),
-        email=doc.get("email"),
-    )
+    async with _cooldown_held_only_if_sent(mobile_number):
+        doc = await user_service.create_or_refresh_pending(
+            mobile_number, name, email, state, password
+        )
+        return await _issue_otp(
+            mobile_number,
+            is_new_account=True,
+            role=user_service.role_of(doc),
+            email=doc.get("email"),
+        )
 
 
 async def start_signin(mobile_number: str, ip: str) -> OTPSentResponse:
     """Send an OTP to an existing (pending or active) account. Also serves
     "resend OTP", which gets no special treatment on the cooldown."""
     await _throttle_otp(mobile_number, ip)
-    user = await user_service.get_for_signin(mobile_number)
-    is_new = user.get("status") != user_service.STATUS_ACTIVE
-    return await _issue_otp(
-        mobile_number,
-        is_new_account=is_new,
-        role=user_service.role_of(user),
-        email=user.get("email"),
-    )
+    async with _cooldown_held_only_if_sent(mobile_number):
+        user = await user_service.get_for_signin(mobile_number)
+        is_new = user.get("status") != user_service.STATUS_ACTIVE
+        return await _issue_otp(
+            mobile_number,
+            is_new_account=is_new,
+            role=user_service.role_of(user),
+            email=user.get("email"),
+        )
 
 
 async def start_admin_signin(mobile_number: str, ip: str) -> OTPSentResponse:
@@ -284,7 +324,7 @@ async def verify_otp(mobile_number: str, otp: str, ip: str) -> TokenResponse:
     user = await user_service.activate(mobile_number)
     await otp_repo.delete(record["_id"])
     # A successful login clears the resend cooldown for this number.
-    await rate_limiter.reset_for("otp_cooldown", mobile_number)
+    await rate_limiter.reset_for(_COOLDOWN_SCOPE, mobile_number)
 
     access_token = create_access_token(subject=user["mobile_number"], scope=scope)
     refresh = await token_service.issue_refresh_token(user["mobile_number"], scope=scope)
@@ -386,18 +426,19 @@ async def delete_account(mobile_number: str, otp: Optional[str], ip: str) -> Del
 
 async def _start_account_deletion(mobile_number: str, ip: str) -> DeleteAccountResponse:
     await _throttle_otp(mobile_number, ip)
-    # Raises for unknown / blocked accounts, and refuses admins, before sending.
-    user = await user_service.get_for_signin(mobile_number)
-    if user_service.is_admin_account(user):
-        raise CannotDeleteAdmin()
+    async with _cooldown_held_only_if_sent(mobile_number):
+        # Raises for unknown / blocked accounts, and refuses admins, before sending.
+        user = await user_service.get_for_signin(mobile_number)
+        if user_service.is_admin_account(user):
+            raise CannotDeleteAdmin()
 
-    sent = await _issue_otp(
-        mobile_number,
-        is_new_account=False,
-        purpose=PURPOSE_DELETE,
-        role=user_service.role_of(user),
-        email=user.get("email"),
-    )
+        sent = await _issue_otp(
+            mobile_number,
+            is_new_account=False,
+            purpose=PURPOSE_DELETE,
+            role=user_service.role_of(user),
+            email=user.get("email"),
+        )
     logger.info("Account deletion requested for %s from %s", mask(mobile_number), ip)
     return DeleteAccountResponse(
         otp_sent=True,

@@ -107,7 +107,11 @@ def _otp_step() -> None:
     mobile: str = st.session_state[_MOBILE]
 
     if sent.email:
-        where = f"**{sent.mobile_number}** and **{sent.email}**"
+        # Streamlit's markdown renderer auto-links a bare "x@y.com" into a
+        # mailto: link. Escaping the @ as an HTML entity keeps the text
+        # exactly the same on screen without it becoming clickable.
+        email_display = sent.email.replace("@", "&#64;")
+        where = f"**{sent.mobile_number}** and **{email_display}**"
     else:
         where = f"**{sent.mobile_number}**"
     st.info(

@@ -25,7 +25,13 @@ Design notes
   therefore extends your own lockout rather than probing around it.
 * Limits are consumed *before* the work is attempted, so a request that fails
   for another reason (unknown number, existing account) still costs quota. That
-  is deliberate: it is what makes number enumeration expensive.
+  is deliberate: it is what makes number enumeration expensive. Consuming first
+  is also what makes the check atomic under concurrent requests.
+* One exception (user decision, 2026-11-15): the `otp_cooldown` counter is
+  handed back when the request fails before an OTP actually goes out. See
+  `_cooldown_held_only_if_sent` in services/auth_service.py — a user who
+  mistypes their email must not be told to wait 60s for a code they never got.
+  The hourly caps are still charged on failure.
 * Every rejection carries Retry-After, so the app can render "Resend in 47s"
   instead of letting the user mash a button.
 """
